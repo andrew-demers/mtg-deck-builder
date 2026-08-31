@@ -19,3 +19,22 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+model Card {
+  id                  String   @id @default(cuid())
+  name                String   @unique
+  manaCost            String?
+  manaValue           Float
+  colors              String[]
+  colorIdentity       String[]
+  type                String
+  types               String[]
+  supertypes          String[]
+  subtypes            String[]
+  oracleText          String?
+  legalities          Json
+  scryfallOracleId    String?
+  isCommanderEligible Boolean
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}

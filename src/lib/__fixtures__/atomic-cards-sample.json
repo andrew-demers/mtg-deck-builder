@@ -1,0 +1,198 @@
+{
+  "meta": {
+    "date": "2026-08-31",
+    "version": "5.3.0+20260831"
+  },
+  "data": {
+    "Atraxa, Praetors' Voice": [
+      {
+        "name": "Atraxa, Praetors' Voice",
+        "manaCost": "{G}{W}{U}{B}",
+        "manaValue": 4,
+        "convertedManaCost": 4,
+        "colors": [
+          "B",
+          "G",
+          "U",
+          "W"
+        ],
+        "colorIdentity": [
+          "B",
+          "G",
+          "U",
+          "W"
+        ],
+        "type": "Legendary Creature — Phyrexian Angel Horror",
+        "types": [
+          "Creature"
+        ],
+        "supertypes": [
+          "Legendary"
+        ],
+        "subtypes": [
+          "Phyrexian",
+          "Angel",
+          "Horror"
+        ],
+        "text": "Flying, vigilance, deathtouch, lifelink\nAt the beginning of your end step, proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+        "legalities": {
+          "brawl": "Legal",
+          "commander": "Legal",
+          "duel": "Legal",
+          "gladiator": "Legal",
+          "historic": "Legal",
+          "legacy": "Legal",
+          "oathbreaker": "Legal",
+          "penny": "Legal",
+          "timeless": "Legal",
+          "vintage": "Legal"
+        },
+        "identifiers": {
+          "scryfallOracleId": "7e6b9b59-cd68-4e3c-827b-38833c92d6eb"
+        }
+      }
+    ],
+    "Grizzly Bears": [
+      {
+        "name": "Grizzly Bears",
+        "manaCost": "{1}{G}",
+        "manaValue": 2,
+        "convertedManaCost": 2,
+        "colors": [
+          "G"
+        ],
+        "colorIdentity": [
+          "G"
+        ],
+        "type": "Creature — Bear",
+        "types": [
+          "Creature"
+        ],
+        "supertypes": [],
+        "subtypes": [
+          "Bear"
+        ],
+        "legalities": {
+          "brawl": "Legal",
+          "commander": "Legal",
+          "duel": "Legal",
+          "gladiator": "Legal",
+          "historic": "Legal",
+          "legacy": "Legal",
+          "modern": "Legal",
+          "oathbreaker": "Legal",
+          "oldschool": "Legal",
+          "pauper": "Legal",
+          "paupercommander": "Legal",
+          "penny": "Legal",
+          "predh": "Legal",
+          "premodern": "Legal",
+          "timeless": "Legal",
+          "vintage": "Legal"
+        },
+        "identifiers": {
+          "scryfallOracleId": "14c8f55d-d177-4c25-a931-ebeb9e6062a0"
+        }
+      }
+    ],
+    "Clear, the Mind": [
+      {
+        "name": "Clear, the Mind",
+        "manaCost": "{2}{U}",
+        "manaValue": 3,
+        "convertedManaCost": 3,
+        "colors": [
+          "U"
+        ],
+        "colorIdentity": [
+          "U"
+        ],
+        "type": "Sorcery",
+        "types": [
+          "Sorcery"
+        ],
+        "supertypes": [],
+        "subtypes": [],
+        "text": "Spell commander (This card can be your commander. In Limited, it can partner like other monocolored legends.)\nTarget player shuffles their graveyard into their library.\nDraw a card.",
+        "legalities": {},
+        "identifiers": {
+          "scryfallOracleId": "48699c1c-e3df-40c2-87b2-ea4d51feefa2"
+        }
+      }
+    ],
+    "Fire // Ice": [
+      {
+        "name": "Fire // Ice",
+        "manaCost": "{1}{R}",
+        "manaValue": 4,
+        "convertedManaCost": 4,
+        "colors": [
+          "R"
+        ],
+        "colorIdentity": [
+          "R",
+          "U"
+        ],
+        "type": "Instant",
+        "types": [
+          "Instant"
+        ],
+        "supertypes": [],
+        "subtypes": [],
+        "text": "Fire deals 2 damage divided as you choose among one or two targets.",
+        "legalities": {
+          "commander": "Legal",
+          "duel": "Legal",
+          "legacy": "Legal",
+          "modern": "Legal",
+          "oathbreaker": "Legal",
+          "pauper": "Legal",
+          "paupercommander": "Legal",
+          "predh": "Legal",
+          "premodern": "Legal",
+          "vintage": "Legal"
+        },
+        "identifiers": {
+          "scryfallOracleId": "ae92942b-919c-4ea9-b693-85fcef765d5a"
+        },
+        "side": "a"
+      },
+      {
+        "name": "Fire // Ice",
+        "manaCost": "{1}{U}",
+        "manaValue": 4,
+        "convertedManaCost": 4,
+        "colors": [
+          "U"
+        ],
+        "colorIdentity": [
+          "R",
+          "U"
+        ],
+        "type": "Instant",
+        "types": [
+          "Instant"
+        ],
+        "supertypes": [],
+        "subtypes": [],
+        "text": "Tap target permanent.\nDraw a card.",
+        "legalities": {
+          "commander": "Legal",
+          "duel": "Legal",
+          "legacy": "Legal",
+          "modern": "Legal",
+          "oathbreaker": "Legal",
+          "pauper": "Legal",
+          "paupercommander": "Legal",
+          "predh": "Legal",
+          "premodern": "Legal",
+          "vintage": "Legal"
+        },
+        "identifiers": {
+          "scryfallOracleId": "ae92942b-919c-4ea9-b693-85fcef765d5a"
+        },
+        "side": "b"
+      }
+    ]
+  }
+}
