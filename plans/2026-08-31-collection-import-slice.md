@@ -1,7 +1,7 @@
 # Plan: Collection import + MTGJSON matching + categorized browse UI
 
 Date: 2026-08-31
-Status: IN PROGRESS
+Status: COMPLETED
 
 ## Problem
 
@@ -60,51 +60,51 @@ Greenfield repo - nothing exists yet (`git log` is empty, working tree is empty 
 ## Tasks
 
 ### Group A - Project scaffold & infra  [no dependencies, runs first, solo]
-- [ ] Task 1: Scaffold Next.js app (`create-next-app`, TypeScript, App Router, Tailwind, ESLint) at repo root; add Vitest + React Testing Library config (`vitest.config.ts`, `package.json` test script).
+- [x] Task 1: Scaffold Next.js app (`create-next-app`, TypeScript, App Router, Tailwind, ESLint) at repo root; add Vitest + React Testing Library config (`vitest.config.ts`, `package.json` test script).
   verify: `npm run build` and `npm test` both run (test suite may be empty but must exit 0).
-- [ ] Task 2: Add `docker-compose.yml` for local Postgres, `prisma/schema.prisma` with `datasource` config, `.env.example` with `DATABASE_URL`, `NEXTAUTH_SECRET`. Add `User` model only for now.
+- [x] Task 2: Add `docker-compose.yml` for local Postgres, `prisma/schema.prisma` with `datasource` config, `.env.example` with `DATABASE_URL`, `NEXTAUTH_SECRET`. Add `User` model only for now.
   verify: `docker compose up -d db && npx prisma migrate dev --name init` runs clean against the local container.
-- [ ] Task 3: Add root `README.md` with setup steps (env vars, docker compose, migrate, dev server) and confirm `npm run dev` boots on `localhost:3000`.
+- [x] Task 3: Add root `README.md` with setup steps (env vars, docker compose, migrate, dev server) and confirm `npm run dev` boots on `localhost:3000`.
   verify: `curl -sf localhost:3000 > /dev/null` while dev server is running.
 
 ### Group B - Auth  [depends on A] [parallel with C]
-- [ ] Task 4: Add `User` password field + Auth.js config (`src/lib/auth.ts` or `auth.config.ts`) with Credentials provider, JWT session, bcryptjs hashing. Add `app/api/auth/[...nextauth]/route.ts`.
+- [x] Task 4: Add `User` password field + Auth.js config (`src/lib/auth.ts` or `auth.config.ts`) with Credentials provider, JWT session, bcryptjs hashing. Add `app/api/auth/[...nextauth]/route.ts`.
   verify: unit test hitting the credentials `authorize` callback with a seeded bcrypt hash returns a session-shaped user for correct password, `null` for wrong password.
-- [ ] Task 5: Add signup page (`app/signup/page.tsx`) + API route creating a `User` with a hashed password, and login page (`app/login/page.tsx`) using Auth.js `signIn`.
+- [x] Task 5: Add signup page (`app/signup/page.tsx`) + API route creating a `User` with a hashed password, and login page (`app/login/page.tsx`) using Auth.js `signIn`.
   verify: `npm test` covers the signup API route (rejects duplicate email, rejects short password, creates user on valid input); manual check - `npm run dev`, sign up a test account, log in.
-- [ ] Task 6: Add auth middleware/session check protecting `/collection/*` routes, redirecting unauthenticated users to `/login`.
+- [x] Task 6: Add auth middleware/session check protecting `/collection/*` routes, redirecting unauthenticated users to `/login`.
   verify: hitting `/collection` with no session redirects to `/login` (integration test or manual curl following redirects).
 
 ### Group C - MTGJSON card catalog  [depends on A] [parallel with B]
-- [ ] Task 7: Add `Card` Prisma model (`name` unique, `manaCost` nullable string, `manaValue` float, `colors` string[], `colorIdentity` string[], `type` string, `types`/`supertypes`/`subtypes` string[], `oracleText` nullable string, `legalities` Json, `scryfallOracleId` nullable string, `isCommanderEligible` boolean) + migration.
+- [x] Task 7: Add `Card` Prisma model (`name` unique, `manaCost` nullable string, `manaValue` float, `colors` string[], `colorIdentity` string[], `type` string, `types`/`supertypes`/`subtypes` string[], `oracleText` nullable string, `legalities` Json, `scryfallOracleId` nullable string, `isCommanderEligible` boolean) + migration.
   verify: `npx prisma migrate dev --name add-card` applies clean.
-- [ ] Task 8: Add `src/lib/commander-eligibility.ts`: pure function `isCommanderEligible({ type, text }): boolean` - true if `type` contains "Legendary Creature", or `text` matches `/can be your commander/i`.
+- [x] Task 8: Add `src/lib/commander-eligibility.ts`: pure function `isCommanderEligible({ type, text }): boolean` - true if `type` contains "Legendary Creature", or `text` matches `/can be your commander/i`.
   verify: `npm test -- commander-eligibility` passes for: legendary creature (true, use `Atraxa, Praetors' Voice` shape), non-legendary card with explicit commander-granting text (true, use `Clear, the Mind`'s real text: "Spell commander (This card can be your commander. ...)"), vanilla non-legendary creature (false, e.g. `Grizzly Bears`).
-- [ ] Task 9: Add `src/lib/mtgjson.ts`: `parseAtomicCards(jsonText)` parsing MTGJSON's `AtomicCards.json` shape (`{ data: { [name]: AtomicCardFace[] } }`, one face per name for this slice's purposes) into a flat `{ name, manaCost, manaValue, colors, colorIdentity, type, types, supertypes, subtypes, oracleText, legalities, scryfallOracleId }[]`. Add a small fixture file `src/lib/__fixtures__/atomic-cards-sample.json` with the three cards from Task 8 plus one split card (e.g. `Fire // Ice`) for shape coverage.
+- [x] Task 9: Add `src/lib/mtgjson.ts`: `parseAtomicCards(jsonText)` parsing MTGJSON's `AtomicCards.json` shape (`{ data: { [name]: AtomicCardFace[] } }`, one face per name for this slice's purposes) into a flat `{ name, manaCost, manaValue, colors, colorIdentity, type, types, supertypes, subtypes, oracleText, legalities, scryfallOracleId }[]`. Add a small fixture file `src/lib/__fixtures__/atomic-cards-sample.json` with the three cards from Task 8 plus one split card (e.g. `Fire // Ice`) for shape coverage.
   verify: `npm test -- mtgjson` passes against the fixture.
-- [ ] Task 10: Add `src/lib/card-sync.ts`: `syncCards(cards)` upserting parsed cards into the `Card` model by `name`, computing `isCommanderEligible` via Task 8's function on the way in. Add `scripts/sync-cards.ts` (run via `npm run sync-cards`) that fetches `https://mtgjson.com/api/v5/AtomicCards.json.xz`, decompresses it (`xz -d` or a JS xz decoder), parses via Task 9, and calls `syncCards`.
+- [x] Task 10: Add `src/lib/card-sync.ts`: `syncCards(cards)` upserting parsed cards into the `Card` model by `name`, computing `isCommanderEligible` via Task 8's function on the way in. Add `scripts/sync-cards.ts` (run via `npm run sync-cards`) that fetches `https://mtgjson.com/api/v5/AtomicCards.json.xz`, decompresses it (`xz -d` or a JS xz decoder), parses via Task 9, and calls `syncCards`.
   verify: `npm test -- card-sync` passes, confirms an upsert on an existing `name` updates fields rather than duplicating rows.
 
 ### Group D - CSV import pipeline  [depends on A, C]
-- [ ] Task 11: Add `CollectionEntry` (userId, cardId, quantity, foil, setCode nullable, sourceScryfallId nullable - provenance only) and `UnmatchedImportRow` (userId, rawName, rawSet, quantity, foil, status: pending/resolved/ignored) Prisma models + migration.
+- [x] Task 11: Add `CollectionEntry` (userId, cardId, quantity, foil, setCode nullable, sourceScryfallId nullable - provenance only) and `UnmatchedImportRow` (userId, rawName, rawSet, quantity, foil, status: pending/resolved/ignored) Prisma models + migration.
   verify: `npx prisma migrate dev --name add-collection-import` applies clean.
-- [ ] Task 12: Add `src/lib/manabox-csv.ts`: header-name-based parser using `csv-parse`, normalizing rows to `{ name, setCode, scryfallId?, quantity, foil }`, tolerant of the columns confirmed above, rejecting a file missing `Name`.
+- [x] Task 12: Add `src/lib/manabox-csv.ts`: header-name-based parser using `csv-parse`, normalizing rows to `{ name, setCode, scryfallId?, quantity, foil }`, tolerant of the columns confirmed above, rejecting a file missing `Name`.
   verify: `npm test -- manabox-csv` passes against fixture CSVs in `src/lib/__fixtures__/` (well-formed row, missing-set row, malformed quantity row).
-- [ ] Task 13: Add `app/api/collection/import/route.ts`: accepts uploaded CSV, parses via Task 12, looks up each row's `name` (case-insensitive) against the local `Card` table synced by Group C, upserts matches into `CollectionEntry`, writes non-matches into `UnmatchedImportRow`, returns `{ matched, unmatched }` counts.
+- [x] Task 13: Add `app/api/collection/import/route.ts`: accepts uploaded CSV, parses via Task 12, looks up each row's `name` (case-insensitive) against the local `Card` table synced by Group C, upserts matches into `CollectionEntry`, writes non-matches into `UnmatchedImportRow`, returns `{ matched, unmatched }` counts.
   verify: `npm test -- collection/import` passes against a seeded test `Card` table, asserting matched rows land in `CollectionEntry` and unmatched rows land in `UnmatchedImportRow`.
-- [ ] Task 14: Add `app/import/page.tsx`: file upload form posting to Task 13's route, showing the matched/unmatched summary on success.
+- [x] Task 14: Add `app/import/page.tsx`: file upload form posting to Task 13's route, showing the matched/unmatched summary on success.
   verify: manual - `npm run dev`, upload a fixture CSV, see the summary counts render.
 
 ### Group E - Manual resolution UI  [depends on B, D] [parallel with F]
-- [ ] Task 15: Add `app/api/collection/unmatched/route.ts` (GET, lists pending `UnmatchedImportRow`s for the session user) and `app/api/collection/unmatched/[id]/resolve/route.ts` (POST, accepts either a chosen `cardId` or `ignore`, and on resolve upserts the `CollectionEntry` and marks the row `resolved`).
+- [x] Task 15: Add `app/api/collection/unmatched/route.ts` (GET, lists pending `UnmatchedImportRow`s for the session user) and `app/api/collection/unmatched/[id]/resolve/route.ts` (POST, accepts either a chosen `cardId` or `ignore`, and on resolve upserts the `CollectionEntry` and marks the row `resolved`).
   verify: `npm test -- unmatched` passes covering resolve-with-match and resolve-as-ignore paths.
-- [ ] Task 16: Add `app/api/cards/search/route.ts` (GET, `?q=`, `ILIKE '%q%'` against the local `Card` table, ranked by name length, capped at 20 results) and `app/collection/unmatched/page.tsx`: lists pending rows, lets the user type a search against that route and pick a result to resolve.
+- [x] Task 16: Add `app/api/cards/search/route.ts` (GET, `?q=`, `ILIKE '%q%'` against the local `Card` table, ranked by name length, capped at 20 results) and `app/collection/unmatched/page.tsx`: lists pending rows, lets the user type a search against that route and pick a result to resolve.
   verify: manual - resolve one of the unmatched fixture rows from Task 12/13 through the UI and confirm it disappears from the queue and appears in `/collection`.
 
 ### Group F - Categorized browse UI  [depends on B, C, D] [parallel with E]
-- [ ] Task 17: Add `app/api/collection/route.ts` (GET, session-scoped): returns the user's `CollectionEntry`s joined with `Card`, supporting query params for mana value range, color identity, card type substring, and `commanderEligible=true`.
+- [x] Task 17: Add `app/api/collection/route.ts` (GET, session-scoped): returns the user's `CollectionEntry`s joined with `Card`, supporting query params for mana value range, color identity, card type substring, and `commanderEligible=true`.
   verify: `npm test -- collection/route` passes covering each filter independently and combined.
-- [ ] Task 18: Add `app/collection/page.tsx`: table/grid of the user's collection with filter controls (mana value, color identity, type, commander-eligible toggle) and sort (name, mana value) wired to Task 17's route.
+- [x] Task 18: Add `app/collection/page.tsx`: table/grid of the user's collection with filter controls (mana value, color identity, type, commander-eligible toggle) and sort (name, mana value) wired to Task 17's route.
   verify: manual - `npm run dev`, log in, import a fixture CSV, apply each filter and confirm the visible set changes correctly.
 
 ## Self-review
@@ -113,3 +113,13 @@ Greenfield repo - nothing exists yet (`git log` is empty, working tree is empty 
 - B and C both depend only on A and touch disjoint files, so they run in parallel; E and F both depend on D but touch disjoint routes/pages, so they also run in parallel.
 - Verify steps are concrete commands or specific manual checks, not "confirm it works."
 - ManaBox's exact export schema was researched (not guessed) but not confirmed against a live export file - Task 12's fixtures encode the columns found during planning; flag to the user if a real export deviates.
+
+## Outcome
+
+All 6 groups implemented, verified, and committed on branch `collection-import-slice` (commits `6ac2c27`..`11d3ff9`). `npm test` (50 tests) and `npm run build` both clean at completion.
+
+- `npm run sync-cards` synced 35,016 real cards from MTGJSON in ~25s; 3,791 flagged commander-eligible.
+- Found and fixed during real verification (not caught by unit tests, since they mock Prisma): `scripts/sync-cards.ts` didn't load `.env` when run via `tsx` (Next.js auto-loads it, plain `tsx` doesn't) - fixed with `import "dotenv/config"`. Also found that Next.js 16 renamed `middleware.ts` to `proxy.ts` (Proxy defaults to the Node.js runtime, not Edge, which Prisma's driver-adapter requires) - the initial `middleware.ts` built clean but would have failed at runtime.
+- Ran a full clean end-to-end pass after all groups landed (fresh dev server, fresh user, real signup/login/import/browse/resolve) to confirm nothing broke across group boundaries: comma-in-card-name CSV rows, foil parsing, all four collection filters (mana value range, color-identity subset, type substring, commander-eligible), and the unmatched-row search-and-resolve flow all behaved correctly.
+- **Known limitation, not a defect:** ManaBox's `Foil` column encoding (`"foil"`/`"normal"` vs `"true"`/`"false"`) was never confirmed against a real export file - `parseManaBoxCsv` only recognizes a case-insensitive `"foil"` substring. Confirm against a real ManaBox export before relying on foil tracking for real data.
+- Deferred to the next slice (per Scope): decklist import, all LLM-driven features (commander suggestion, deck build, critique, card suggestions), Partner/Background pairings, OAuth/password-reset/email-verification, and the Anthropic/Ollama provider abstraction.
