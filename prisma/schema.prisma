@@ -13,16 +13,18 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String               @id @default(cuid())
+  email               String               @unique
+  passwordHash        String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  collectionEntries   CollectionEntry[]
+  unmatchedImportRows UnmatchedImportRow[]
 }
 
 model Card {
-  id                  String   @id @default(cuid())
-  name                String   @unique
+  id                  String            @id @default(cuid())
+  name                String            @unique
   manaCost            String?
   manaValue           Float
   colors              String[]
@@ -35,6 +37,36 @@ model Card {
   legalities          Json
   scryfallOracleId    String?
   isCommanderEligible Boolean
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  collectionEntries   CollectionEntry[]
+}
+
+model CollectionEntry {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  cardId           String
+  card             Card     @relation(fields: [cardId], references: [id])
+  quantity         Int
+  foil             Boolean  @default(false)
+  setCode          String?
+  sourceScryfallId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, cardId, foil])
+}
+
+model UnmatchedImportRow {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rawName   String
+  rawSet    String?
+  quantity  Int
+  foil      Boolean  @default(false)
+  status    String   @default("pending") // "pending" | "resolved" | "ignored"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

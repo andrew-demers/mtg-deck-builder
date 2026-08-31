@@ -1,6 +1,20 @@
-import NextAuth from "next-auth";
+import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { verifyCredentials } from "@/lib/verify-credentials";
+
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+    } & DefaultSession["user"];
+  }
+}
+
+declare module "@auth/core/jwt" {
+  interface JWT {
+    id?: string;
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
@@ -35,6 +49,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       return true;
+    },
+    jwt: ({ token, user }) => {
+      if (user) {
+        token.id = user.id;
+      }
+
+      return token;
+    },
+    session: ({ session, token }) => {
+      if (token.id) {
+        session.user.id = token.id;
+      }
+
+      return session;
     },
   },
 });
