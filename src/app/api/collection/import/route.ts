@@ -2,39 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { parseManaBoxCsv, type ManaBoxRow } from "@/lib/manabox-csv";
-
-/**
- * Finds the matching `Card` for a ManaBox row (case-insensitive exact name
- * match) and either increments an existing `CollectionEntry` (same
- * user+card+foil) or creates a new one. This is a read-then-write rather
- * than a single upsert because the `quantity` on conflict needs to be
- * *added to* the existing value, not overwritten - fine for import volumes,
- * not a hot path.
- */
-async function applyMatchedRow(userId: string, cardId: string, row: ManaBoxRow): Promise<void> {
-  const existing = await prisma.collectionEntry.findUnique({
-    where: { userId_cardId_foil: { userId, cardId, foil: row.foil } },
-  });
-
-  if (existing) {
-    await prisma.collectionEntry.update({
-      where: { id: existing.id },
-      data: { quantity: existing.quantity + row.quantity },
-    });
-    return;
-  }
-
-  await prisma.collectionEntry.create({
-    data: {
-      userId,
-      cardId,
-      quantity: row.quantity,
-      foil: row.foil,
-      setCode: row.setCode,
-      sourceScryfallId: row.scryfallId,
-    },
-  });
-}
+import { upsertCollectionEntry } from "@/lib/collection-entry";
 
 async function recordUnmatchedRow(userId: string, row: ManaBoxRow): Promise<void> {
   await prisma.unmatchedImportRow.create({
@@ -84,7 +52,12 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     if (card) {
-      await applyMatchedRow(userId, card.id, row);
+      await upsertCollectionEntry(userId, card.id, {
+        quantity: row.quantity,
+        foil: row.foil,
+        setCode: row.setCode,
+        sourceScryfallId: row.scryfallId,
+      });
       matched += 1;
     } else {
       await recordUnmatchedRow(userId, row);
