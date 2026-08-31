@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 interface UnmatchedRow {
   id: string;
@@ -25,6 +25,7 @@ export default function UnmatchedCollectionPage() {
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [results, setResults] = useState<Record<string, CardSearchResult[]>>({});
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
+  const searchTimeouts = useRef<Record<string, number>>({});
 
   useEffect(() => {
     loadRows();
@@ -55,6 +56,11 @@ export default function UnmatchedCollectionPage() {
     const value = event.target.value;
     setQueries((previous) => ({ ...previous, [rowId]: value }));
 
+    const existingTimeout = searchTimeouts.current[rowId];
+    if (existingTimeout !== undefined) {
+      window.clearTimeout(existingTimeout);
+    }
+
     const trimmed = value.trim();
 
     if (!trimmed) {
@@ -62,7 +68,7 @@ export default function UnmatchedCollectionPage() {
       return;
     }
 
-    const timeoutId = window.setTimeout(async () => {
+    searchTimeouts.current[rowId] = window.setTimeout(async () => {
       try {
         const response = await fetch(`/api/cards/search?q=${encodeURIComponent(trimmed)}`);
 
@@ -76,8 +82,6 @@ export default function UnmatchedCollectionPage() {
         // Ignore transient search failures - the user can keep typing.
       }
     }, 300);
-
-    return () => window.clearTimeout(timeoutId);
   }
 
   async function resolveRow(rowId: string, body: { cardId: string } | { ignore: true }) {
