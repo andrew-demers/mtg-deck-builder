@@ -31,10 +31,6 @@ const collectionFindFirstMock = prisma.collectionEntry.findFirst as unknown as R
   typeof vi.fn
 >;
 
-function buildGetRequest(): Request {
-  return new Request("http://localhost/api/decks");
-}
-
 function buildPostRequest(body: unknown): Request {
   return new Request("http://localhost/api/decks", {
     method: "POST",
