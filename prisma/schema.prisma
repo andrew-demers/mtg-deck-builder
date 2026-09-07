@@ -20,6 +20,7 @@ model User {
   updatedAt           DateTime             @updatedAt
   collectionEntries   CollectionEntry[]
   unmatchedImportRows UnmatchedImportRow[]
+  decks               Deck[]
 }
 
 model Card {
@@ -40,6 +41,8 @@ model Card {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   collectionEntries   CollectionEntry[]
+  decksAsCommander    Deck[]
+  deckCards           DeckCard[]
 }
 
 model CollectionEntry {
@@ -69,4 +72,30 @@ model UnmatchedImportRow {
   status    String   @default("pending") // "pending" | "resolved" | "ignored"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Deck {
+  id              String     @id @default(cuid())
+  userId          String
+  user            User       @relation(fields: [userId], references: [id])
+  name            String
+  commanderCardId String?
+  commanderCard   Card?      @relation(fields: [commanderCardId], references: [id])
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  cards           DeckCard[]
+}
+
+model DeckCard {
+  id          String   @id @default(cuid())
+  deckId      String
+  deck        Deck     @relation(fields: [deckId], references: [id])
+  cardId      String
+  card        Card     @relation(fields: [cardId], references: [id])
+  quantity    Int
+  isCommander Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([deckId, cardId])
 }
