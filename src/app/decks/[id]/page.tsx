@@ -46,6 +46,9 @@ export default function DeckPage() {
   const [isBuilding, setIsBuilding] = useState(false);
   const [isCritiquing, setIsCritiquing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestedCards, setSuggestedCards] = useState<CardData[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [addingCardId, setAddingCardId] = useState<string | null>(null);
 
   const loadDeck = useCallback(async () => {
     setIsLoading(true);
@@ -115,6 +118,55 @@ export default function DeckPage() {
       setError("Something went wrong getting a critique for this deck.");
     } finally {
       setIsCritiquing(false);
+    }
+  }
+
+  async function handleGetSuggestions() {
+    setError(null);
+    setIsSuggesting(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/suggest-cards`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong getting card suggestions for this deck.");
+        return;
+      }
+
+      const data = (await response.json()) as CardData[];
+      setSuggestedCards(data);
+    } catch {
+      setError("Something went wrong getting card suggestions for this deck.");
+    } finally {
+      setIsSuggesting(false);
+    }
+  }
+
+  async function handleAddCard(cardId: string) {
+    setError(null);
+    setAddingCardId(cardId);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong adding this card to the deck.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+      setSuggestedCards((current) => current.filter((card) => card.id !== cardId));
+    } catch {
+      setError("Something went wrong adding this card to the deck.");
+    } finally {
+      setAddingCardId(null);
     }
   }
 
@@ -208,6 +260,42 @@ export default function DeckPage() {
             </div>
             {deck.critique ? (
               <p className="whitespace-pre-wrap text-sm text-zinc-700">{deck.critique}</p>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-zinc-500">Card suggestions</p>
+              <button
+                type="button"
+                onClick={handleGetSuggestions}
+                disabled={isSuggesting}
+                className="self-start rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+              >
+                {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
+              </button>
+            </div>
+            {suggestedCards.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {suggestedCards.map((card) => (
+                  <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
+                    <span>
+                      {card.name}
+                      <span className="text-zinc-500">
+                        {card.manaCost ? ` - ${card.manaCost}` : ""} - {card.type}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleAddCard(card.id)}
+                      disabled={addingCardId === card.id}
+                      className="rounded border px-3 py-1 disabled:opacity-50"
+                    >
+                      {addingCardId === card.id ? "Adding..." : "Add"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             ) : null}
           </div>
         </>
