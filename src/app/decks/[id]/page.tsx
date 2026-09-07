@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 interface CardData {
@@ -50,32 +50,41 @@ export default function DeckPage() {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
 
-  const loadDeck = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/decks/${deckId}`);
-
-      if (!response.ok) {
-        setError("Something went wrong loading this deck.");
-        return;
-      }
-
-      const data = (await response.json()) as DeckData;
-      setDeck(data);
-    } catch {
-      setError("Something went wrong loading this deck.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [deckId]);
-
   useEffect(() => {
-    if (deckId) {
-      loadDeck();
+    if (!deckId) {
+      return;
     }
-  }, [deckId, loadDeck]);
+
+    const controller = new AbortController();
+
+    async function loadDeck() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`/api/decks/${deckId}`, { signal: controller.signal });
+
+        if (!response.ok) {
+          setError("Something went wrong loading this deck.");
+          return;
+        }
+
+        const data = (await response.json()) as DeckData;
+        setDeck(data);
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          return;
+        }
+        setError("Something went wrong loading this deck.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadDeck();
+
+    return () => controller.abort();
+  }, [deckId]);
 
   async function handleBuildDeck() {
     setError(null);
