@@ -25,6 +25,7 @@ interface DeckData {
   commanderCardId: string | null;
   commanderCard: CardData | null;
   cards: DeckCardData[];
+  critique: string | null;
 }
 
 function sortDeckCards(cards: DeckCardData[]): DeckCardData[] {
@@ -43,6 +44,7 @@ export default function DeckPage() {
   const [deck, setDeck] = useState<DeckData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isBuilding, setIsBuilding] = useState(false);
+  const [isCritiquing, setIsCritiquing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadDeck = useCallback(async () => {
@@ -91,6 +93,28 @@ export default function DeckPage() {
       setError("Something went wrong building this deck.");
     } finally {
       setIsBuilding(false);
+    }
+  }
+
+  async function handleGetCritique() {
+    setError(null);
+    setIsCritiquing(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/critique`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong getting a critique for this deck.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+    } catch {
+      setError("Something went wrong getting a critique for this deck.");
+    } finally {
+      setIsCritiquing(false);
     }
   }
 
@@ -165,6 +189,27 @@ export default function DeckPage() {
               ))}
             </tbody>
           </table>
+
+          <div className="flex flex-col gap-3 rounded border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-zinc-500">Deck critique</p>
+              <button
+                type="button"
+                onClick={handleGetCritique}
+                disabled={isCritiquing}
+                className="self-start rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+              >
+                {isCritiquing
+                  ? "Getting critique..."
+                  : deck.critique
+                    ? "Re-request critique"
+                    : "Get critique"}
+              </button>
+            </div>
+            {deck.critique ? (
+              <p className="whitespace-pre-wrap text-sm text-zinc-700">{deck.critique}</p>
+            ) : null}
+          </div>
         </>
       )}
     </main>
