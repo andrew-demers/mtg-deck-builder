@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Button from "@/components/button";
+import { isBasicLand, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
   id: string;
@@ -10,6 +11,12 @@ interface CardData {
   manaCost: string | null;
   manaValue: number;
   type: string;
+  colorIdentity: string[];
+}
+
+interface OwnedCollectionEntry {
+  id: string;
+  card: CardData;
 }
 
 interface DeckCardData {
@@ -50,6 +57,11 @@ export default function DeckPage() {
   const [suggestedCards, setSuggestedCards] = useState<CardData[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
+  const [removingCardId, setRemovingCardId] = useState<string | null>(null);
+  const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
+  const [collectionCards, setCollectionCards] = useState<CardData[] | null>(null);
+  const [isLoadingCollection, setIsLoadingCollection] = useState(false);
+  const [collectionQuery, setCollectionQuery] = useState("");
 
   useEffect(() => {
     if (!deckId) {
@@ -180,6 +192,89 @@ export default function DeckPage() {
     }
   }
 
+  async function handleRemoveCard(cardId: string) {
+    setError(null);
+    setRemovingCardId(cardId);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/cards/${cardId}`, { method: "DELETE" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong removing this card.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+    } catch {
+      setError("Something went wrong removing this card.");
+    } finally {
+      setRemovingCardId(null);
+    }
+  }
+
+  async function handleUpdateQuantity(cardId: string, quantity: number) {
+    if (quantity < 1) {
+      return;
+    }
+
+    setError(null);
+    setUpdatingCardId(cardId);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong updating this card's quantity.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+    } catch {
+      setError("Something went wrong updating this card's quantity.");
+    } finally {
+      setUpdatingCardId(null);
+    }
+  }
+
+  async function handleLoadCollection() {
+    setError(null);
+    setIsLoadingCollection(true);
+
+    try {
+      const response = await fetch("/api/collection");
+
+      if (!response.ok) {
+        setError("Something went wrong loading your collection.");
+        return;
+      }
+
+      const data = (await response.json()) as OwnedCollectionEntry[];
+      const seen = new Set<string>();
+      const deduped: CardData[] = [];
+
+      for (const entry of data) {
+        if (!seen.has(entry.card.id)) {
+          seen.add(entry.card.id);
+          deduped.push(entry.card);
+        }
+      }
+
+      setCollectionCards(deduped);
+    } catch {
+      setError("Something went wrong loading your collection.");
+    } finally {
+      setIsLoadingCollection(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
@@ -198,6 +293,16 @@ export default function DeckPage() {
 
   const sortedCards = sortDeckCards(deck.cards);
   const totalCards = deck.cards.reduce((sum, deckCard) => sum + deckCard.quantity, 0);
+
+  const deckCardIds = new Set(deck.cards.map((deckCard) => deckCard.cardId));
+  const commanderColorIdentity = deck.commanderCard?.colorIdentity ?? [];
+  const normalizedCollectionQuery = collectionQuery.trim().toLowerCase();
+  const availableCollectionCards = (collectionCards ?? []).filter(
+    (card) =>
+      !deckCardIds.has(card.id) &&
+      validateColorIdentity(commanderColorIdentity, [card]) &&
+      (normalizedCollectionQuery === "" || card.name.toLowerCase().includes(normalizedCollectionQuery)),
+  );
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
@@ -230,6 +335,7 @@ export default function DeckPage() {
                 <th className="py-2 pr-4 font-medium">Mana cost</th>
                 <th className="py-2 pr-4 font-medium">Type</th>
                 <th className="py-2 pr-4 font-medium">Quantity</th>
+                <th className="py-2 pr-4 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -241,7 +347,43 @@ export default function DeckPage() {
                   </td>
                   <td className="py-2 pr-4">{deckCard.card.manaCost ?? "-"}</td>
                   <td className="py-2 pr-4">{deckCard.card.type}</td>
-                  <td className="py-2 pr-4">{deckCard.quantity}</td>
+                  <td className="py-2 pr-4">
+                    {isBasicLand(deckCard.card) ? (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="secondary"
+                          className="px-2 py-0.5 text-xs"
+                          disabled={updatingCardId === deckCard.cardId || deckCard.quantity <= 1}
+                          onClick={() => handleUpdateQuantity(deckCard.cardId, deckCard.quantity - 1)}
+                        >
+                          -
+                        </Button>
+                        <span>{deckCard.quantity}</span>
+                        <Button
+                          variant="secondary"
+                          className="px-2 py-0.5 text-xs"
+                          disabled={updatingCardId === deckCard.cardId}
+                          onClick={() => handleUpdateQuantity(deckCard.cardId, deckCard.quantity + 1)}
+                        >
+                          +
+                        </Button>
+                      </div>
+                    ) : (
+                      deckCard.quantity
+                    )}
+                  </td>
+                  <td className="py-2 pr-4">
+                    {deckCard.isCommander ? null : (
+                      <Button
+                        variant="secondary"
+                        className="px-3 py-1 text-xs"
+                        disabled={removingCardId === deckCard.cardId}
+                        onClick={() => handleRemoveCard(deckCard.cardId)}
+                      >
+                        {removingCardId === deckCard.cardId ? "Removing..." : "Remove"}
+                      </Button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -291,6 +433,54 @@ export default function DeckPage() {
                   </li>
                 ))}
               </ul>
+            ) : null}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded border p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-muted">Add from collection</p>
+              <Button
+                onClick={handleLoadCollection}
+                disabled={isLoadingCollection}
+                className="self-start px-4 py-2"
+              >
+                {isLoadingCollection ? "Loading..." : collectionCards ? "Refresh" : "Browse collection"}
+              </Button>
+            </div>
+            {collectionCards ? (
+              <>
+                <input
+                  type="text"
+                  value={collectionQuery}
+                  onChange={(event) => setCollectionQuery(event.target.value)}
+                  placeholder="Search your collection"
+                  className="rounded border px-3 py-2 text-sm"
+                />
+                {availableCollectionCards.length === 0 ? (
+                  <p className="text-sm text-muted">No owned cards match.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {availableCollectionCards.map((card) => (
+                      <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
+                        <span>
+                          {card.name}
+                          <span className="text-muted">
+                            {card.manaCost ? ` - ${card.manaCost}` : ""} - {card.type}
+                          </span>
+                        </span>
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleAddCard(card.id)}
+                          disabled={addingCardId === card.id}
+                          className="px-3 py-1"
+                        >
+                          {addingCardId === card.id ? "Adding..." : "Add"}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
             ) : null}
           </div>
         </>
