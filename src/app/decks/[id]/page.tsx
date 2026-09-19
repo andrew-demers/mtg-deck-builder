@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import Button from "@/components/button";
 
 interface CardData {
   id: string;
@@ -182,7 +183,7 @@ export default function DeckPage() {
   if (isLoading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-        <p className="text-sm text-zinc-700">Loading...</p>
+        <p className="text-sm text-muted">Loading...</p>
       </main>
     );
   }
@@ -190,7 +191,7 @@ export default function DeckPage() {
   if (!deck) {
     return (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-        <p className="text-sm text-red-600">{error ?? "Deck not found."}</p>
+        <p className="text-sm text-danger">{error ?? "Deck not found."}</p>
       </main>
     );
   }
@@ -204,29 +205,24 @@ export default function DeckPage() {
 
       {deck.commanderCard ? (
         <div className="rounded border p-4">
-          <p className="text-sm font-medium text-zinc-500">Commander</p>
+          <p className="text-sm font-medium text-muted">Commander</p>
           <p className="text-lg font-medium">{deck.commanderCard.name}</p>
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-muted">
             {deck.commanderCard.manaCost ? `${deck.commanderCard.manaCost} - ` : ""}
             {deck.commanderCard.type}
           </p>
         </div>
       ) : null}
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       {deck.cards.length === 0 ? (
-        <button
-          type="button"
-          onClick={handleBuildDeck}
-          disabled={isBuilding}
-          className="self-start rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
+        <Button onClick={handleBuildDeck} disabled={isBuilding} className="self-start px-4 py-2">
           {isBuilding ? "Building..." : "Build deck"}
-        </button>
+        </Button>
       ) : (
         <>
-          <p className="text-sm text-zinc-700">{totalCards} cards</p>
+          <p className="text-sm text-muted">{totalCards} cards</p>
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b">
@@ -253,36 +249,26 @@ export default function DeckPage() {
 
           <div className="flex flex-col gap-3 rounded border p-4">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-zinc-500">Deck critique</p>
-              <button
-                type="button"
-                onClick={handleGetCritique}
-                disabled={isCritiquing}
-                className="self-start rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-              >
+              <p className="text-sm font-medium text-muted">Deck critique</p>
+              <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-4 py-2">
                 {isCritiquing
                   ? "Getting critique..."
                   : deck.critique
                     ? "Re-request critique"
                     : "Get critique"}
-              </button>
+              </Button>
             </div>
             {deck.critique ? (
-              <p className="whitespace-pre-wrap text-sm text-zinc-700">{deck.critique}</p>
+              <p className="whitespace-pre-wrap text-sm text-muted">{deck.critique}</p>
             ) : null}
           </div>
 
           <div className="flex flex-col gap-3 rounded border p-4">
             <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-zinc-500">Card suggestions</p>
-              <button
-                type="button"
-                onClick={handleGetSuggestions}
-                disabled={isSuggesting}
-                className="self-start rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-              >
+              <p className="text-sm font-medium text-muted">Card suggestions</p>
+              <Button onClick={handleGetSuggestions} disabled={isSuggesting} className="self-start px-4 py-2">
                 {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
-              </button>
+              </Button>
             </div>
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
@@ -290,18 +276,18 @@ export default function DeckPage() {
                   <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
                     <span>
                       {card.name}
-                      <span className="text-zinc-500">
+                      <span className="text-muted">
                         {card.manaCost ? ` - ${card.manaCost}` : ""} - {card.type}
                       </span>
                     </span>
-                    <button
-                      type="button"
+                    <Button
+                      variant="secondary"
                       onClick={() => handleAddCard(card.id)}
                       disabled={addingCardId === card.id}
-                      className="rounded border px-3 py-1 disabled:opacity-50"
+                      className="px-3 py-1"
                     >
                       {addingCardId === card.id ? "Adding..." : "Add"}
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>

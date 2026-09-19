@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import Button from "@/components/button";
 
 interface UnmatchedRow {
   id: string;
@@ -28,29 +29,29 @@ export default function UnmatchedCollectionPage() {
   const searchTimeouts = useRef<Record<string, number>>({});
 
   useEffect(() => {
+    async function loadRows() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch("/api/collection/unmatched");
+
+        if (!response.ok) {
+          setError("Could not load unmatched rows.");
+          return;
+        }
+
+        const data = (await response.json()) as UnmatchedRow[];
+        setRows(data);
+      } catch {
+        setError("Could not load unmatched rows.");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
     loadRows();
   }, []);
-
-  async function loadRows() {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/collection/unmatched");
-
-      if (!response.ok) {
-        setError("Could not load unmatched rows.");
-        return;
-      }
-
-      const data = (await response.json()) as UnmatchedRow[];
-      setRows(data);
-    } catch {
-      setError("Could not load unmatched rows.");
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   function handleQueryChange(rowId: string, event: ChangeEvent<HTMLInputElement>) {
     const value = event.target.value;
@@ -121,17 +122,17 @@ export default function UnmatchedCollectionPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-12">
       <h1 className="text-2xl font-semibold">Resolve unmatched rows</h1>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {isLoading ? <p className="text-sm text-zinc-700">Loading...</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {isLoading ? <p className="text-sm text-muted">Loading...</p> : null}
       {!isLoading && rows.length === 0 ? (
-        <p className="text-sm text-zinc-700">No unmatched rows to resolve.</p>
+        <p className="text-sm text-muted">No unmatched rows to resolve.</p>
       ) : null}
       <ul className="flex flex-col gap-6">
         {rows.map((row) => (
           <li key={row.id} className="flex flex-col gap-3 rounded border p-4">
             <div>
               <p className="font-medium">{row.rawName}</p>
-              <p className="text-sm text-zinc-500">
+              <p className="text-sm text-muted">
                 {row.rawSet ? `${row.rawSet} - ` : ""}Qty {row.quantity}
                 {row.foil ? " - Foil" : ""}
               </p>
@@ -150,27 +151,26 @@ export default function UnmatchedCollectionPage() {
               <ul className="flex flex-col gap-1">
                 {results[row.id]?.map((card) => (
                   <li key={card.id}>
-                    <button
-                      type="button"
+                    <Button
+                      variant="secondary"
                       disabled={pendingRowId === row.id}
                       onClick={() => resolveRow(row.id, { cardId: card.id })}
-                      className="w-full rounded border px-3 py-2 text-left text-sm hover:bg-zinc-50 disabled:opacity-50"
+                      className="w-full px-3 py-2 text-left text-sm"
                     >
                       {card.name}
                       {card.manaCost ? ` ${card.manaCost}` : ""} - {card.type}
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
             ) : null}
-            <button
-              type="button"
+            <Button
               disabled={pendingRowId === row.id}
               onClick={() => resolveRow(row.id, { ignore: true })}
-              className="self-start rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+              className="self-start px-4 py-2 text-sm"
             >
               Ignore
-            </button>
+            </Button>
           </li>
         ))}
       </ul>

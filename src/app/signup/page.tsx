@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
+import Button from "@/components/button";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -61,14 +62,10 @@ export default function SignupPage() {
             className="rounded border px-3 py-2"
           />
         </label>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        <Button type="submit" disabled={isSubmitting} className="px-4 py-2">
           {isSubmitting ? "Signing up..." : "Sign up"}
-        </button>
+        </Button>
       </form>
     </main>
   );

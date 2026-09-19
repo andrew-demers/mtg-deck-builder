@@ -181,12 +181,12 @@ export default function CollectionPage() {
         </label>
       </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       {isLoading ? (
-        <p className="text-sm text-zinc-700">Loading...</p>
+        <p className="text-sm text-muted">Loading...</p>
       ) : entries.length === 0 ? (
-        <p className="text-sm text-zinc-700">No cards match the current filters.</p>
+        <p className="text-sm text-muted">No cards match the current filters.</p>
       ) : (
         <table className="w-full border-collapse text-left text-sm">
           <thead>

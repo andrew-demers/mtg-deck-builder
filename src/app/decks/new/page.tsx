@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "@/components/button";
 
 interface SuggestedCard {
   id: string;
@@ -80,23 +81,18 @@ export default function NewDeckPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
       <h1 className="text-2xl font-semibold">New deck</h1>
-      <p className="text-sm text-zinc-700">
+      <p className="text-sm text-muted">
         Ask for a Commander suggestion from your collection, then build a deck around it.
       </p>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      <button
-        type="button"
-        onClick={requestSuggestion}
-        disabled={isSuggesting}
-        className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-      >
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      <Button onClick={requestSuggestion} disabled={isSuggesting} className="px-4 py-2">
         {isSuggesting ? "Suggesting..." : "Suggest a commander"}
-      </button>
+      </Button>
       {suggestion ? (
         <div className="flex flex-col gap-3 rounded border p-4">
           <div>
             <p className="font-medium">{suggestion.name}</p>
-            <p className="text-sm text-zinc-500">
+            <p className="text-sm text-muted">
               {suggestion.manaCost ? `${suggestion.manaCost} - ` : ""}
               {suggestion.type}
             </p>
@@ -110,14 +106,9 @@ export default function NewDeckPage() {
               className="rounded border px-3 py-2"
             />
           </label>
-          <button
-            type="button"
-            onClick={useSuggestion}
-            disabled={isCreating}
-            className="self-start rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
-          >
+          <Button onClick={useSuggestion} disabled={isCreating} className="self-start px-4 py-2 text-sm">
             {isCreating ? "Creating..." : "Use this commander"}
-          </button>
+          </Button>
         </div>
       ) : null}
     </main>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Button from "@/components/button";
 
 interface ImportSummary {
   matched: number;
@@ -66,19 +67,15 @@ export default function ImportPage() {
             className="rounded border px-3 py-2"
           />
         </label>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-danger">{error}</p> : null}
         {summary ? (
-          <p className="text-sm text-zinc-700">
+          <p className="text-sm text-muted">
             Matched: {summary.matched}, Unmatched: {summary.unmatched}
           </p>
         ) : null}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={isSubmitting} className="px-4 py-2">
           {isSubmitting ? "Importing..." : "Import"}
-        </button>
+        </Button>
       </form>
     </main>
   );
