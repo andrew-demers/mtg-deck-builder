@@ -102,6 +102,7 @@ describe("POST /api/decks/[id]/cards", () => {
       id: "deck_1",
       userId: "user_1",
       commanderCard: commander,
+      cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(offColorCard);
     collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
@@ -112,12 +113,41 @@ describe("POST /api/decks/[id]/cards", () => {
     expect(deckCardCreateMock).not.toHaveBeenCalled();
   });
 
+  it("accepts a card within a partner commander's color identity that the active commander alone wouldn't allow", async () => {
+    const partnerCard = { id: "card_partner_color", name: "Partner Color Card", colorIdentity: ["B"], type: "Creature" };
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValueOnce({
+      id: "deck_1",
+      userId: "user_1",
+      commanderCard: commander,
+      cards: [
+        { cardId: commander.id, quantity: 1, isCommander: true, card: commander },
+        { cardId: "partner", quantity: 1, isCommander: true, card: { colorIdentity: ["B"] } },
+      ],
+    });
+    cardFindUniqueMock.mockResolvedValue(partnerCard);
+    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
+    deckCardFindUniqueMock.mockResolvedValue(null);
+
+    const finalDeck = { id: "deck_1", cards: [] };
+    deckFindUniqueMock.mockResolvedValueOnce(finalDeck);
+
+    const response = await POST(
+      buildRequest({ cardId: "card_partner_color" }),
+      buildParams("deck_1"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(deckCardCreateMock).toHaveBeenCalled();
+  });
+
   it("creates a new DeckCard row when adding a card not yet in the deck", async () => {
     authMock.mockResolvedValue({ user: { id: "user_1" } });
     deckFindUniqueMock.mockResolvedValueOnce({
       id: "deck_1",
       userId: "user_1",
       commanderCard: commander,
+      cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(validCard);
     collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
@@ -142,6 +172,7 @@ describe("POST /api/decks/[id]/cards", () => {
       id: "deck_1",
       userId: "user_1",
       commanderCard: commander,
+      cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(validCard);
     collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
@@ -164,6 +195,7 @@ describe("POST /api/decks/[id]/cards", () => {
       id: "deck_1",
       userId: "user_1",
       commanderCard: commander,
+      cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(land);
     collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });

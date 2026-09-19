@@ -65,6 +65,24 @@ export function validateColorIdentity(
 }
 
 /**
+ * Combines every commander's color identity into one set, so a
+ * partner/background pair (two `isCommander: true` DeckCard rows) restricts
+ * the deck no more narrowly than either commander alone would - a single
+ * commander's identity passed through here is returned unchanged.
+ */
+export function unionColorIdentity(commanders: { colorIdentity: string[] }[]): string[] {
+  const colors = new Set<string>();
+
+  for (const commander of commanders) {
+    for (const color of commander.colorIdentity) {
+      colors.add(color);
+    }
+  }
+
+  return Array.from(colors);
+}
+
+/**
  * Enforces the Commander deck size rule: the deck (including the
  * commander) must total exactly 100 cards.
  */

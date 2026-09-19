@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { isBasicLand, validateColorIdentity } from "@/lib/commander-legality";
+import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface AddDeckCardBody {
   cardId?: string;
@@ -37,7 +37,7 @@ export async function POST(
 
   const deck = await prisma.deck.findUnique({
     where: { id },
-    include: { commanderCard: true },
+    include: { commanderCard: true, cards: { include: { card: true } } },
   });
 
   if (!deck) {
@@ -68,7 +68,18 @@ export async function POST(
     return NextResponse.json({ error: "You do not own this card" }, { status: 400 });
   }
 
-  if (deck.commanderCard && !validateColorIdentity(deck.commanderCard.colorIdentity, [card])) {
+  // A deck whose commander was just chosen but never built yet has no
+  // DeckCard rows at all, so fall back to the single chosen commander in
+  // that case rather than treating the deck as commander-less.
+  const commanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  const commanders =
+    commanderDeckCards.length > 0
+      ? commanderDeckCards.map((deckCard) => deckCard.card)
+      : deck.commanderCard
+        ? [deck.commanderCard]
+        : [];
+
+  if (deck.commanderCard && !validateColorIdentity(unionColorIdentity(commanders), [card])) {
     return NextResponse.json(
       { error: "Card is outside the commander's color identity" },
       { status: 400 },

@@ -4,6 +4,7 @@ import {
   validateColorIdentity,
   validateDeckSize,
   validateDeck,
+  unionColorIdentity,
 } from "@/lib/commander-legality";
 
 describe("validateSingleton", () => {
@@ -51,6 +52,22 @@ describe("validateDeckSize", () => {
 
   it("rejects 99 cards as short", () => {
     expect(validateDeckSize([{ quantity: 1 }, { quantity: 98 }])).toBe(false);
+  });
+});
+
+describe("unionColorIdentity", () => {
+  it("returns a single commander's own identity unchanged", () => {
+    expect(unionColorIdentity([{ colorIdentity: ["W", "U"] }])).toEqual(["W", "U"]);
+  });
+
+  it("dedupes overlapping colors across two commanders", () => {
+    expect(
+      unionColorIdentity([{ colorIdentity: ["W", "U"] }, { colorIdentity: ["U", "B"] }]),
+    ).toEqual(["W", "U", "B"]);
+  });
+
+  it("returns an empty array for zero commanders", () => {
+    expect(unionColorIdentity([])).toEqual([]);
   });
 });
 

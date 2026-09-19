@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { validateColorIdentity } from "@/lib/commander-legality";
+import { unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -21,7 +21,7 @@ export class CardSuggestionError extends Error {}
 export async function suggestCards(deckId: string): Promise<Card[]> {
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
-    include: { commanderCard: true, cards: true },
+    include: { commanderCard: true, cards: { include: { card: true } } },
   });
 
   if (!deck) {
@@ -33,6 +33,13 @@ export async function suggestCards(deckId: string): Promise<Card[]> {
   }
 
   const commander = deck.commanderCard;
+
+  // A deck whose commander was just chosen but never built yet has no
+  // DeckCard rows at all, so fall back to the single chosen commander in
+  // that case rather than treating the deck as commander-less.
+  const commanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  const commanders =
+    commanderDeckCards.length > 0 ? commanderDeckCards.map((deckCard) => deckCard.card) : [commander];
 
   const entries = await prisma.collectionEntry.findMany({
     where: { userId: deck.userId },
@@ -69,7 +76,7 @@ export async function suggestCards(deckId: string): Promise<Card[]> {
     return [];
   }
 
-  const completion = await getLlmProvider().complete(buildPrompt(commander, remainingPool));
+  const completion = await getLlmProvider().complete(buildPrompt(commanders, remainingPool));
   const suggestedNames = parseNames(completion);
 
   const cardsByName = new Map(remainingPool.map((card) => [normalize(card.name), card]));
@@ -81,7 +88,7 @@ export async function suggestCards(deckId: string): Promise<Card[]> {
       continue; // hallucinated, or owned but with no remaining availability
     }
 
-    if (!validateColorIdentity(commander.colorIdentity, [card])) {
+    if (!validateColorIdentity(unionColorIdentity(commanders), [card])) {
       continue; // outside the commander's color identity
     }
 
@@ -102,12 +109,14 @@ function parseNames(completion: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function buildPrompt(commander: Card, remainingPool: Card[]): string {
+function buildPrompt(commanders: Card[], remainingPool: Card[]): string {
   const names = remainingPool.map((card) => `- ${card.name}`).join("\n");
+  const commanderNames = commanders.map((commander) => commander.name).join(" + ");
+  const colorIdentity = unionColorIdentity(commanders);
 
   return [
     "You are suggesting additions to an existing Magic: The Gathering Commander/EDH deck.",
-    `Commander: ${commander.name} (color identity: ${commander.colorIdentity.join("") || "colorless"})`,
+    `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
     "Suggest cards to add to this deck from the following list of cards the player owns but has not yet fully used in this deck.",
     "Every suggestion must be within the commander's color identity.",

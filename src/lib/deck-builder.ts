@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { isBasicLand, validateColorIdentity } from "@/lib/commander-legality";
+import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 import type { Card } from "@/generated/prisma/client";
 
 const NON_COMMANDER_DECK_SIZE = 99;
@@ -33,7 +33,7 @@ export interface BuildDeckResult {
 export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
-    include: { commanderCard: true },
+    include: { commanderCard: true, cards: { include: { card: true } } },
   });
 
   if (!deck) {
@@ -46,6 +46,13 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
 
   const commander = deck.commanderCard;
 
+  // A deck whose commander was just chosen but never built yet has no
+  // DeckCard rows at all, so fall back to the single chosen commander in
+  // that case rather than treating the deck as commander-less.
+  const commanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  const commanders =
+    commanderDeckCards.length > 0 ? commanderDeckCards.map((deckCard) => deckCard.card) : [commander];
+
   const entries = await prisma.collectionEntry.findMany({
     where: { userId: deck.userId },
     include: { card: true },
@@ -55,7 +62,7 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
   // pool offered to the LLM (and from anything matched back against it).
   const ownedPool = entries.map((entry) => entry.card).filter((card) => card.id !== commander.id);
 
-  const completion = await getLlmProvider().complete(buildPrompt(commander, ownedPool));
+  const completion = await getLlmProvider().complete(buildPrompt(commanders, ownedPool));
   const pickedNames = parsePickedNames(completion);
 
   const cardsByName = new Map(ownedPool.map((card) => [normalize(card.name), card]));
@@ -72,7 +79,7 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
       continue; // hallucinated or not owned
     }
 
-    if (!validateColorIdentity(commander.colorIdentity, [card])) {
+    if (!validateColorIdentity(unionColorIdentity(commanders), [card])) {
       continue; // outside the commander's color identity
     }
 
@@ -130,12 +137,14 @@ function parsePickedNames(completion: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function buildPrompt(commander: Card, ownedPool: Card[]): string {
+function buildPrompt(commanders: Card[], ownedPool: Card[]): string {
   const names = ownedPool.map((card) => `- ${card.name}`).join("\n");
+  const commanderNames = commanders.map((commander) => commander.name).join(" + ");
+  const colorIdentity = unionColorIdentity(commanders);
 
   return [
     "You are building a Magic: The Gathering Commander/EDH deck.",
-    `Commander: ${commander.name} (color identity: ${commander.colorIdentity.join("") || "colorless"})`,
+    `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
     "Pick exactly 99 more cards for this deck from the following list of cards the player owns.",
     "Every card must be within the commander's color identity, and every nonland card may appear at most once (singleton). Basic lands may repeat.",

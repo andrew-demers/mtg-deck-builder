@@ -76,13 +76,17 @@ function mockCompletion(text: string) {
   getLlmProviderMock.mockReturnValue({ complete: vi.fn().mockResolvedValue(text) });
 }
 
-function mockDeckAndCollection(entries: Record<string, unknown>[]) {
+function mockDeckAndCollection(
+  entries: Record<string, unknown>[],
+  deckCards: Record<string, unknown>[] = [],
+) {
   deckFindUniqueMock.mockResolvedValue({
     id: "deck_1",
     userId: "user_1",
     name: "Test Deck",
     commanderCardId: commander.id,
     commanderCard: commander,
+    cards: deckCards,
   });
   collectionFindManyMock.mockResolvedValue(entries.map((c) => ({ card: c })));
 }
@@ -178,5 +182,41 @@ describe("buildDeck", () => {
     mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
 
     await expect(buildDeck("deck_1")).rejects.toThrow(DeckBuildError);
+  });
+
+  it("accepts a pick within a partner commander's color identity that the active commander alone wouldn't allow", async () => {
+    const commanderA = card({
+      id: "cmd_a",
+      name: "Commander A",
+      colorIdentity: ["W"],
+      isCommanderEligible: true,
+    });
+    const commanderB = card({
+      id: "cmd_b",
+      name: "Commander B",
+      colorIdentity: ["U"],
+      isCommanderEligible: true,
+    });
+    const blueCard = card({ id: "blue_card", name: "Blue Card", colorIdentity: ["U"] });
+    const land = plains();
+
+    deckFindUniqueMock.mockResolvedValue({
+      id: "deck_1",
+      userId: "user_1",
+      name: "Test Deck",
+      commanderCardId: commanderA.id,
+      commanderCard: commanderA,
+      cards: [
+        { cardId: commanderA.id, quantity: 1, isCommander: true, card: commanderA },
+        { cardId: commanderB.id, quantity: 1, isCommander: true, card: commanderB },
+      ],
+    });
+    collectionFindManyMock.mockResolvedValue([blueCard, land].map((c) => ({ card: c })));
+    mockCompletion(blueCard.name as string);
+
+    const result = await buildDeck("deck_1");
+
+    const blueEntry = result.cards.find((c) => c.cardId === "blue_card");
+    expect(blueEntry).toBeDefined();
   });
 });
