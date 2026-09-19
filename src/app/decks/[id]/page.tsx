@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Button from "@/components/button";
-import { isBasicLand, validateColorIdentity } from "@/lib/commander-legality";
+import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
   id: string;
@@ -62,6 +62,7 @@ export default function DeckPage() {
   const [collectionCards, setCollectionCards] = useState<CardData[] | null>(null);
   const [isLoadingCollection, setIsLoadingCollection] = useState(false);
   const [collectionQuery, setCollectionQuery] = useState("");
+  const [switchingCardId, setSwitchingCardId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!deckId) {
@@ -95,6 +96,49 @@ export default function DeckPage() {
     }
 
     loadDeck();
+
+    return () => controller.abort();
+  }, [deckId]);
+
+  useEffect(() => {
+    if (!deckId) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadCollection() {
+      setIsLoadingCollection(true);
+
+      try {
+        const response = await fetch("/api/collection", { signal: controller.signal });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as OwnedCollectionEntry[];
+        const seen = new Set<string>();
+        const deduped: CardData[] = [];
+
+        for (const entry of data) {
+          if (!seen.has(entry.card.id)) {
+            seen.add(entry.card.id);
+            deduped.push(entry.card);
+          }
+        }
+
+        setCollectionCards(deduped);
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          return;
+        }
+      } finally {
+        setIsLoadingCollection(false);
+      }
+    }
+
+    loadCollection();
 
     return () => controller.abort();
   }, [deckId]);
@@ -275,6 +319,32 @@ export default function DeckPage() {
     }
   }
 
+  async function handleSwitchCommander(cardId: string) {
+    setError(null);
+    setSwitchingCardId(cardId);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/commander`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong switching the active commander.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+    } catch {
+      setError("Something went wrong switching the active commander.");
+    } finally {
+      setSwitchingCardId(null);
+    }
+  }
+
   if (isLoading) {
     return (
       <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
@@ -295,7 +365,19 @@ export default function DeckPage() {
   const totalCards = deck.cards.reduce((sum, deckCard) => sum + deckCard.quantity, 0);
 
   const deckCardIds = new Set(deck.cards.map((deckCard) => deckCard.cardId));
-  const commanderColorIdentity = deck.commanderCard?.colorIdentity ?? [];
+  const builtCommanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  // A deck's commander is chosen (and `commanderCardId` set) before it's ever
+  // built, when `cards` has no rows yet - fall back to `commanderCard` so the
+  // commander box still renders pre-build, same as before multi-commander
+  // decks existed.
+  const commanderDeckCards =
+    builtCommanderDeckCards.length > 0
+      ? builtCommanderDeckCards
+      : deck.commanderCard
+        ? [{ id: deck.commanderCard.id, cardId: deck.commanderCard.id, card: deck.commanderCard }]
+        : [];
+  const commanderColorIdentity = unionColorIdentity(commanderDeckCards.map((deckCard) => deckCard.card));
+  const ownedCardIds = new Set((collectionCards ?? []).map((card) => card.id));
   const normalizedCollectionQuery = collectionQuery.trim().toLowerCase();
   const availableCollectionCards = (collectionCards ?? []).filter(
     (card) =>
@@ -308,14 +390,41 @@ export default function DeckPage() {
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
       <h1 className="text-2xl font-semibold">{deck.name}</h1>
 
-      {deck.commanderCard ? (
-        <div className="rounded border p-4">
-          <p className="text-sm font-medium text-muted">Commander</p>
-          <p className="text-lg font-medium">{deck.commanderCard.name}</p>
-          <p className="text-sm text-muted">
-            {deck.commanderCard.manaCost ? `${deck.commanderCard.manaCost} - ` : ""}
-            {deck.commanderCard.type}
-          </p>
+      {commanderDeckCards.length > 0 ? (
+        <div className="flex flex-col gap-3 sm:flex-row">
+          {commanderDeckCards.map((deckCard) => {
+            const isActive = deckCard.cardId === deck.commanderCardId;
+
+            return (
+              <div key={deckCard.id} className="flex-1 rounded border p-4">
+                <p className="text-sm font-medium text-muted">
+                  Commander{commanderDeckCards.length > 1 && isActive ? " (Active)" : ""}
+                </p>
+                <p className="text-lg font-medium">
+                  {deckCard.card.name}
+                  {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
+                    <span className="ml-2 rounded bg-danger/10 px-1.5 py-0.5 text-xs text-danger">
+                      Not owned
+                    </span>
+                  ) : null}
+                </p>
+                <p className="text-sm text-muted">
+                  {deckCard.card.manaCost ? `${deckCard.card.manaCost} - ` : ""}
+                  {deckCard.card.type}
+                </p>
+                {!isActive ? (
+                  <Button
+                    variant="secondary"
+                    className="mt-2 px-3 py-1 text-xs"
+                    disabled={switchingCardId === deckCard.cardId}
+                    onClick={() => handleSwitchCommander(deckCard.cardId)}
+                  >
+                    {switchingCardId === deckCard.cardId ? "Switching..." : "Make active"}
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -344,6 +453,11 @@ export default function DeckPage() {
                   <td className="py-2 pr-4">
                     {deckCard.card.name}
                     {deckCard.isCommander ? " (Commander)" : ""}
+                    {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
+                      <span className="ml-2 rounded bg-danger/10 px-1.5 py-0.5 text-xs text-danger">
+                        Not owned
+                      </span>
+                    ) : null}
                   </td>
                   <td className="py-2 pr-4">{deckCard.card.manaCost ?? "-"}</td>
                   <td className="py-2 pr-4">{deckCard.card.type}</td>
@@ -439,14 +553,20 @@ export default function DeckPage() {
           <div className="flex flex-col gap-3 rounded border p-4">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Add from collection</p>
-              <Button
-                onClick={handleLoadCollection}
-                disabled={isLoadingCollection}
-                className="self-start px-4 py-2"
-              >
-                {isLoadingCollection ? "Loading..." : collectionCards ? "Refresh" : "Browse collection"}
-              </Button>
+              {collectionCards ? (
+                <Button
+                  variant="secondary"
+                  onClick={handleLoadCollection}
+                  disabled={isLoadingCollection}
+                  className="self-start px-4 py-2 text-sm"
+                >
+                  {isLoadingCollection ? "Refreshing..." : "Refresh"}
+                </Button>
+              ) : null}
             </div>
+            {!collectionCards && isLoadingCollection ? (
+              <p className="text-sm text-muted">Loading your collection...</p>
+            ) : null}
             {collectionCards ? (
               <>
                 <input
