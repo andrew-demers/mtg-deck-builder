@@ -170,6 +170,37 @@ describe("POST /api/decks/import", () => {
     });
   });
 
+  it("does not create a duplicate DeckCard when a mainboard line names a commander a second time", async () => {
+    // Real ManaBox exports can list a commander again in the mainboard
+    // section as a second printing - re-creating its DeckCard would violate
+    // the (deckId, cardId) unique constraint.
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    parseMock.mockReturnValue({
+      commanderNames: [korvold.name],
+      cards: [
+        { name: korvold.name, quantity: 1 },
+        { name: solRing.name, quantity: 1 },
+      ],
+    });
+    mockCardsByName({ [korvold.name]: korvold, [solRing.name]: solRing });
+    deckCreateMock.mockResolvedValue({ id: "deck_1" });
+    const finalDeck = { id: "deck_1", cards: [] };
+    deckFindUniqueMock.mockResolvedValue(finalDeck);
+
+    const response = await POST(buildRequest());
+    const data = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(data.unmatchedNames).toEqual([]);
+    expect(deckCardCreateMock).toHaveBeenCalledTimes(2);
+    expect(deckCardCreateMock).toHaveBeenCalledWith({
+      data: { deckId: "deck_1", cardId: korvold.id, quantity: 1, isCommander: true },
+    });
+    expect(deckCardCreateMock).toHaveBeenCalledWith({
+      data: { deckId: "deck_1", cardId: solRing.id, quantity: 1, isCommander: false },
+    });
+  });
+
   it("creates a deck with two commanders on the success path", async () => {
     authMock.mockResolvedValue({ user: { id: "user_1" } });
     parseMock.mockReturnValue({

@@ -78,19 +78,39 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Commander not found" }, { status: 400 });
   }
 
+  const commanderCardIds = new Set(
+    [primaryCommanderCard.id, secondaryCommanderCard?.id].filter(
+      (id): id is string => id !== undefined,
+    ),
+  );
+
   const unmatchedNames: string[] = [];
-  const matchedMainboard: { cardId: string; quantity: number }[] = [];
+  const mainboardQuantityByCardId = new Map<string, number>();
 
   for (const { name, quantity } of decklist.cards) {
     const card = await prisma.card.findFirst({
       where: { name: { equals: name, mode: "insensitive" } },
     });
 
-    if (card) {
-      matchedMainboard.push({ cardId: card.id, quantity });
-    } else {
+    if (!card) {
       unmatchedNames.push(name);
+      continue;
     }
+
+    // ManaBox's export can list a commander a second time as a mainboard
+    // printing - it's already represented by the commander DeckCard row
+    // created below, and creating another would violate the
+    // (deckId, cardId) unique constraint. Also defensively sums quantity
+    // by card id rather than trusting the mainboard section to have exactly
+    // one line per card.
+    if (commanderCardIds.has(card.id)) {
+      continue;
+    }
+
+    mainboardQuantityByCardId.set(
+      card.id,
+      (mainboardQuantityByCardId.get(card.id) ?? 0) + quantity,
+    );
   }
 
   const deck = await prisma.deck.create({
@@ -121,7 +141,7 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
 
-  for (const { cardId, quantity } of matchedMainboard) {
+  for (const [cardId, quantity] of mainboardQuantityByCardId) {
     await prisma.deckCard.create({
       data: { deckId: deck.id, cardId, quantity, isCommander: false },
     });
