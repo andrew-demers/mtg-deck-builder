@@ -49,7 +49,7 @@ export default function DecksPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">My Decks</h1>
+        <h1 className="font-display text-2xl tracking-wide">My Decks</h1>
         <div className="flex gap-2">
           <LinkButton href="/decks/new" className="px-4 py-2 text-sm">
             New deck
@@ -71,7 +71,7 @@ export default function DecksPage() {
       {decks && decks.length > 0 ? (
         <ul className="flex flex-col gap-2">
           {decks.map((deck) => (
-            <li key={deck.id} className="rounded border p-4">
+            <li key={deck.id} className="rounded-lg border p-4 shadow-sm">
               <Link href={`/decks/${deck.id}`} className="text-lg font-medium underline">
                 {deck.name}
               </Link>

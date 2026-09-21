@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Button from "@/components/button";
+import ManaCost from "@/components/mana-cost";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
@@ -388,7 +389,7 @@ export default function DeckPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold">{deck.name}</h1>
+      <h1 className="font-display text-2xl tracking-wide">{deck.name}</h1>
 
       {commanderDeckCards.length > 0 ? (
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -396,7 +397,7 @@ export default function DeckPage() {
             const isActive = deckCard.cardId === deck.commanderCardId;
 
             return (
-              <div key={deckCard.id} className="flex-1 rounded border p-4">
+              <div key={deckCard.id} className="flex-1 rounded-lg border p-4 shadow-sm">
                 <p className="text-sm font-medium text-muted">
                   Commander{commanderDeckCards.length > 1 && isActive ? " (Active)" : ""}
                 </p>
@@ -409,7 +410,13 @@ export default function DeckPage() {
                   ) : null}
                 </p>
                 <p className="text-sm text-muted">
-                  {deckCard.card.manaCost ? `${deckCard.card.manaCost} - ` : ""}
+                  {deckCard.card.manaCost ? (
+                    <>
+                      <ManaCost value={deckCard.card.manaCost} /> -{" "}
+                    </>
+                  ) : (
+                    ""
+                  )}
                   {deckCard.card.type}
                 </p>
                 {!isActive ? (
@@ -459,7 +466,9 @@ export default function DeckPage() {
                       </span>
                     ) : null}
                   </td>
-                  <td className="py-2 pr-4">{deckCard.card.manaCost ?? "-"}</td>
+                  <td className="py-2 pr-4">
+                    {deckCard.card.manaCost ? <ManaCost value={deckCard.card.manaCost} /> : "-"}
+                  </td>
                   <td className="py-2 pr-4">{deckCard.card.type}</td>
                   <td className="py-2 pr-4">
                     {isBasicLand(deckCard.card) ? (
@@ -503,7 +512,7 @@ export default function DeckPage() {
             </tbody>
           </table>
 
-          <div className="flex flex-col gap-3 rounded border p-4">
+          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Deck critique</p>
               <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-4 py-2">
@@ -519,7 +528,7 @@ export default function DeckPage() {
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-3 rounded border p-4">
+          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Card suggestions</p>
               <Button onClick={handleGetSuggestions} disabled={isSuggesting} className="self-start px-4 py-2">
@@ -533,7 +542,15 @@ export default function DeckPage() {
                     <span>
                       {card.name}
                       <span className="text-muted">
-                        {card.manaCost ? ` - ${card.manaCost}` : ""} - {card.type}
+                        {card.manaCost ? (
+                          <>
+                            {" "}
+                            - <ManaCost value={card.manaCost} />
+                          </>
+                        ) : (
+                          ""
+                        )}{" "}
+                        - {card.type}
                       </span>
                     </span>
                     <Button
@@ -550,7 +567,7 @@ export default function DeckPage() {
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-3 rounded border p-4">
+          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Add from collection</p>
               {collectionCards ? (
@@ -585,7 +602,15 @@ export default function DeckPage() {
                         <span>
                           {card.name}
                           <span className="text-muted">
-                            {card.manaCost ? ` - ${card.manaCost}` : ""} - {card.type}
+                            {card.manaCost ? (
+                          <>
+                            {" "}
+                            - <ManaCost value={card.manaCost} />
+                          </>
+                        ) : (
+                          ""
+                        )}{" "}
+                        - {card.type}
                           </span>
                         </span>
                         <Button

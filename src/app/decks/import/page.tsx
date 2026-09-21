@@ -65,7 +65,7 @@ export default function ImportDeckPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="text-2xl font-semibold">Import decklist</h1>
+      <h1 className="font-display text-2xl tracking-wide">Import decklist</h1>
       <p className="text-sm text-muted">
         Import a deck exported from ManaBox as a .txt decklist, including a Partner/Background pair.
       </p>
@@ -86,7 +86,7 @@ export default function ImportDeckPage() {
         </Button>
       </form>
       {result ? (
-        <div className="flex flex-col gap-2 rounded border p-4">
+        <div className="flex flex-col gap-2 rounded-lg border p-4 shadow-sm">
           <p className="text-sm font-medium">
             Commander{commanderNames.length > 1 ? "s" : ""}: {commanderNames.join(" + ")}
           </p>

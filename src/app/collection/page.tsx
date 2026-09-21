@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ManaCost from "@/components/mana-cost";
 
 interface CardData {
   id: string;
@@ -111,9 +112,9 @@ export default function CollectionPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold">Collection</h1>
+      <h1 className="font-display text-2xl tracking-wide">Collection</h1>
 
-      <div className="flex flex-col gap-4 rounded border p-4">
+      <div className="flex flex-col gap-4 rounded-lg border p-4 shadow-sm">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1">
             <span className="text-sm font-medium">Min mana value</span>
@@ -202,7 +203,9 @@ export default function CollectionPage() {
             {entries.map((entry) => (
               <tr key={entry.id} className="border-b">
                 <td className="py-2 pr-4">{entry.card.name}</td>
-                <td className="py-2 pr-4">{entry.card.manaCost ?? "-"}</td>
+                <td className="py-2 pr-4">
+                  {entry.card.manaCost ? <ManaCost value={entry.card.manaCost} /> : "-"}
+                </td>
                 <td className="py-2 pr-4">{entry.card.type}</td>
                 <td className="py-2 pr-4">{entry.quantity}</td>
                 <td className="py-2 pr-4">{entry.foil ? "Foil" : "-"}</td>

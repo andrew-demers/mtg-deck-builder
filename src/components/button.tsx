@@ -4,7 +4,7 @@ import type { ButtonHTMLAttributes, ComponentProps } from "react";
 type ButtonVariant = "primary" | "secondary";
 
 const variantClasses: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-foreground hover:opacity-90",
+  primary: "bg-primary text-primary-foreground shadow-sm hover:shadow hover:opacity-90",
   secondary: "border hover:bg-primary/5",
 };
 
@@ -21,7 +21,7 @@ export default function Button({
   return (
     <button
       type={type}
-      className={`rounded disabled:opacity-50 ${variantClasses[variant]} ${className}`}
+      className={`rounded transition-shadow disabled:opacity-50 disabled:shadow-none ${variantClasses[variant]} ${className}`}
       {...props}
     />
   );
@@ -32,5 +32,7 @@ interface LinkButtonProps extends ComponentProps<typeof Link> {
 }
 
 export function LinkButton({ variant = "primary", className = "", ...props }: LinkButtonProps) {
-  return <Link className={`rounded ${variantClasses[variant]} ${className}`} {...props} />;
+  return (
+    <Link className={`rounded transition-shadow ${variantClasses[variant]} ${className}`} {...props} />
+  );
 }

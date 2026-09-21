@@ -12,9 +12,9 @@ export default async function Navbar() {
   const isLoggedIn = !!session?.user;
 
   return (
-    <div className="border-b bg-surface">
+    <div className="border-b bg-surface shadow-sm">
       <nav className="flex items-center justify-between px-4 py-3">
-        <Link href="/" className="font-semibold text-primary">
+        <Link href="/" className="font-display text-lg tracking-wide text-primary">
           MTG Deckbuilder
         </Link>
 

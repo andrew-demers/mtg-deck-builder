@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Button from "@/components/button";
+import ManaCost from "@/components/mana-cost";
 
 interface UnmatchedRow {
   id: string;
@@ -121,7 +122,7 @@ export default function UnmatchedCollectionPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-12">
-      <h1 className="text-2xl font-semibold">Resolve unmatched rows</h1>
+      <h1 className="font-display text-2xl tracking-wide">Resolve unmatched rows</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading...</p> : null}
       {!isLoading && rows.length === 0 ? (
@@ -129,7 +130,7 @@ export default function UnmatchedCollectionPage() {
       ) : null}
       <ul className="flex flex-col gap-6">
         {rows.map((row) => (
-          <li key={row.id} className="flex flex-col gap-3 rounded border p-4">
+          <li key={row.id} className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
             <div>
               <p className="font-medium">{row.rawName}</p>
               <p className="text-sm text-muted">
@@ -158,7 +159,7 @@ export default function UnmatchedCollectionPage() {
                       className="w-full px-3 py-2 text-left text-sm"
                     >
                       {card.name}
-                      {card.manaCost ? ` ${card.manaCost}` : ""} - {card.type}
+                      {card.manaCost ? <ManaCost value={card.manaCost} /> : ""} - {card.type}
                     </Button>
                   </li>
                 ))}
