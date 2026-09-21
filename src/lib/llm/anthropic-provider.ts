@@ -23,6 +23,13 @@ export class AnthropicProvider implements LlmProvider {
     const response = await this.client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
+      // Claude 5-family models default to adaptive extended thinking, which
+      // can consume the entire max_tokens budget on a "thinking" block and
+      // leave no room for an actual text answer (surfaced as a response
+      // with no text content block at all). This provider is a plain
+      // text-in/text-out completion - deck features have no use for a
+      // reasoning trace - so thinking is explicitly turned off.
+      thinking: { type: "disabled" },
       messages: [{ role: "user", content: prompt }],
     });
 

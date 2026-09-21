@@ -40,6 +40,17 @@ describe("AnthropicProvider", () => {
     );
   });
 
+  it("disables extended thinking so a text block is always produced within max_tokens", async () => {
+    createMock.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+
+    const provider = new AnthropicProvider();
+    await provider.complete("hello");
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ thinking: { type: "disabled" } }),
+    );
+  });
+
   it("constructs the client using ANTHROPIC_API_KEY from the environment", async () => {
     createMock.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
 
