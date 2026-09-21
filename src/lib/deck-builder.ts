@@ -114,29 +114,48 @@ export async function buildDeck(
   const shortfall = NON_COMMANDER_DECK_SIZE - sumQuantities(accepted);
 
   if (shortfall > 0) {
-    // Basic lands are exempt from singleton, but NOT from color identity -
-    // an owned Island is still illegal in a mono-red deck, so it must be
-    // filtered the same as every other card before being used to backfill.
-    const ownedBasicLands = ownedPool.filter(
-      (card) => isBasicLand(card) && validateColorIdentity(colorIdentity, [card]),
+    // Prefer basics whose own color identity is one of the commander's
+    // colors (Plains/Island/Swamp/Mountain/Forest) over Wastes - Wastes has
+    // an empty color identity, which passes validateColorIdentity for *any*
+    // commander, so it must not be treated as interchangeable with a
+    // properly colored basic. Only a truly colorless commander falls
+    // through to Wastes (or any other in-identity basic the user owns).
+    const ownedColoredBasics = dedupeById(
+      ownedPool.filter(
+        (card) =>
+          isBasicLand(card) && card.colorIdentity.length === 1 && colorIdentity.includes(card.colorIdentity[0]),
+      ),
+    );
+    const ownedBasicLands = dedupeById(
+      ownedPool.filter((card) => isBasicLand(card) && validateColorIdentity(colorIdentity, [card])),
     );
 
-    // Any in-identity owned basic land can absorb the entire shortfall as
-    // extra quantity. If the user owns none at all and unowned cards aren't
-    // allowed, there's nothing legal left to pad the deck with, so this
-    // fails loudly rather than silently shipping a short (or illegal) deck.
-    // When unowned cards are allowed, fall back to any basic land in the
-    // catalog before giving up.
-    const backfillLand =
-      ownedBasicLands[0] ?? (allowUnowned ? await findCatalogBasicLand(colorIdentity) : null);
+    // Spread the shortfall evenly across every eligible basic land type
+    // rather than dumping it all on a single one, so the mana base actually
+    // reflects the commander's color identity. If the user owns none at all
+    // and unowned cards aren't allowed, there's nothing legal left to pad
+    // the deck with, so this fails loudly rather than silently shipping a
+    // short (or illegal) deck. When unowned cards are allowed, fall back to
+    // one basic land per color from the catalog before giving up.
+    const backfillLands =
+      ownedColoredBasics.length > 0
+        ? ownedColoredBasics
+        : ownedBasicLands.length > 0
+          ? ownedBasicLands
+          : allowUnowned
+            ? await findCatalogBasicLands(colorIdentity)
+            : [];
 
-    if (!backfillLand) {
+    if (backfillLands.length === 0) {
       throw new DeckBuildError(
         "Could not reach 99 legal cards and the user owns no basic lands to backfill with.",
       );
     }
 
-    accepted.set(backfillLand.id, (accepted.get(backfillLand.id) ?? 0) + shortfall);
+    for (let i = 0; i < shortfall; i++) {
+      const land = backfillLands[i % backfillLands.length];
+      accepted.set(land.id, (accepted.get(land.id) ?? 0) + 1);
+    }
   }
 
   const cards: DeckBuildCard[] = [
@@ -199,15 +218,27 @@ async function findCatalogCardsInColorIdentity(
   });
 }
 
-async function findCatalogBasicLand(colorIdentity: string[]): Promise<Card | null> {
-  const disallowed = disallowedColors(colorIdentity);
+/**
+ * Finds one basic land per color in the commander's color identity (e.g.
+ * Plains for W, Island for U), or Wastes for a truly colorless commander.
+ */
+async function findCatalogBasicLands(colorIdentity: string[]): Promise<Card[]> {
+  if (colorIdentity.length === 0) {
+    const wastes = await prisma.card.findFirst({
+      where: { type: { contains: "Basic Land" }, colorIdentity: { equals: [] } },
+    });
+    return wastes ? [wastes] : [];
+  }
 
-  return prisma.card.findFirst({
-    where: {
-      type: { contains: "Basic Land" },
-      ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
-    },
-  });
+  const lands = await Promise.all(
+    colorIdentity.map((color) =>
+      prisma.card.findFirst({
+        where: { type: { contains: "Basic Land" }, colorIdentity: { equals: [color] } },
+      }),
+    ),
+  );
+
+  return lands.filter((land): land is Card => land !== null);
 }
 
 function buildPrompt(commanders: Card[], pool: Card[], allowUnowned: boolean): string {

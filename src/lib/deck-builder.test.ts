@@ -78,6 +78,24 @@ function plains(): Record<string, unknown> {
   });
 }
 
+function island(): Record<string, unknown> {
+  return card({
+    id: "island",
+    name: "Island",
+    colorIdentity: ["U"],
+    type: "Basic Land — Island",
+  });
+}
+
+function wastes(): Record<string, unknown> {
+  return card({
+    id: "wastes",
+    name: "Wastes",
+    colorIdentity: [],
+    type: "Basic Land",
+  });
+}
+
 function mockCompletion(text: string) {
   getLlmProviderMock.mockReturnValue({ complete: vi.fn().mockResolvedValue(text) });
 }
@@ -350,6 +368,65 @@ describe("buildDeck", () => {
     expect(islandEntry).toBeUndefined();
     const mountainEntry = result.cards.find((c) => c.cardId === "catalog_mountain");
     expect(mountainEntry?.quantity).toBe(99 - legalOwned.length);
+  });
+
+  it("does not dump the whole shortfall onto Wastes when owned colored basics are also available", async () => {
+    const legalOwned = makeOwnedPool(30, ["W", "U", "B", "G"]);
+    // Wastes' empty color identity passes validateColorIdentity for any
+    // commander, so it must not be preferred over Plains just because it
+    // happens to sort first in the owned pool.
+    mockDeckAndCollection([wastes(), ...legalOwned, plains()]);
+    mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
+
+    const result = await buildDeck("deck_1");
+
+    const wastesEntry = result.cards.find((c) => c.cardId === "wastes");
+    expect(wastesEntry).toBeUndefined();
+
+    const plainsEntry = result.cards.find((c) => c.cardId === "plains");
+    expect(plainsEntry?.quantity).toBe(99 - legalOwned.length);
+  });
+
+  it("distributes the land shortfall evenly across every owned basic land color", async () => {
+    const legalOwned = makeOwnedPool(30, ["W", "U", "B", "G"]);
+    mockDeckAndCollection([...legalOwned, plains(), island()]);
+    mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
+
+    const result = await buildDeck("deck_1");
+
+    const shortfall = 99 - legalOwned.length;
+    const plainsEntry = result.cards.find((c) => c.cardId === "plains");
+    const islandEntry = result.cards.find((c) => c.cardId === "island");
+    expect(plainsEntry?.quantity).toBe(Math.ceil(shortfall / 2));
+    expect(islandEntry?.quantity).toBe(Math.floor(shortfall / 2));
+  });
+
+  it("falls back to Wastes for a truly colorless commander", async () => {
+    const colorlessCommander = card({
+      id: "colorless_cmd",
+      name: "Colorless Commander",
+      colorIdentity: [],
+      isCommanderEligible: true,
+    });
+    const legalOwned = makeOwnedPool(10, []);
+
+    deckFindUniqueMock.mockResolvedValue({
+      id: "deck_1",
+      userId: "user_1",
+      name: "Test Deck",
+      commanderCardId: colorlessCommander.id,
+      commanderCard: colorlessCommander,
+      cards: [],
+    });
+    collectionFindManyMock.mockResolvedValue(
+      [...legalOwned, wastes()].map((c) => ({ card: c })),
+    );
+    mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
+
+    const result = await buildDeck("deck_1");
+
+    const wastesEntry = result.cards.find((c) => c.cardId === "wastes");
+    expect(wastesEntry?.quantity).toBe(99 - legalOwned.length);
   });
 
   it("throws when allowUnowned is true but no basic land exists anywhere to backfill with", async () => {
