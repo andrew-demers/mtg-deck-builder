@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/button";
 import ManaCost from "@/components/mana-cost";
 import CardName from "@/components/card-name";
@@ -55,6 +55,32 @@ export default function DeckWizardPage() {
   const [deckName, setDeckName] = useState("");
   const [allowUnowned, setAllowUnowned] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [otherDeckCardIds, setOtherDeckCardIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadOtherDeckCardIds() {
+      try {
+        const response = await fetch("/api/decks/card-ids-in-use", { signal: controller.signal });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as string[];
+        setOtherDeckCardIds(new Set(data));
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    loadOtherDeckCardIds();
+
+    return () => controller.abort();
+  }, []);
 
   async function findCommanders() {
     setError(null);
@@ -218,6 +244,9 @@ export default function DeckWizardPage() {
                 <li key={card.id} className="card flex flex-col gap-2">
                   <p className="font-medium">
                     <CardName name={card.name} oracleText={card.oracleText} />
+                    {otherDeckCardIds.has(card.id) ? (
+                      <span className="tag-badge ml-2">In another deck</span>
+                    ) : null}
                     <span className="text-muted">
                       {card.manaCost ? (
                         <>
