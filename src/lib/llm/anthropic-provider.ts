@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LlmProvider } from "@/lib/llm/provider";
 
-// Deck features only need short, single-turn completions (a commander name,
-// a list of card names, a paragraph of critique) - not a chat UI, so a
-// modest max_tokens and a current mid-tier model are enough.
+// Deck features only need single-turn completions, but some (a 99-card deck
+// list, up to 8 commander suggestions with reasons) can run long, so
+// max_tokens has enough headroom that a real answer never gets cut off
+// before a text block is produced.
 const MODEL = "claude-opus-5";
-const MAX_TOKENS = 1024;
+const MAX_TOKENS = 4096;
 
 /**
  * `LlmProvider` backed by the Anthropic Messages API. Reads `ANTHROPIC_API_KEY`
@@ -30,7 +31,10 @@ export class AnthropicProvider implements LlmProvider {
     );
 
     if (!textBlock) {
-      throw new Error("Anthropic response did not contain a text block");
+      const blockTypes = response.content.map((block) => block.type).join(", ") || "none";
+      throw new Error(
+        `Anthropic response did not contain a text block (stop_reason: ${response.stop_reason}, content block types: ${blockTypes})`,
+      );
     }
 
     return textBlock.text;

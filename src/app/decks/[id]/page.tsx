@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Button from "@/components/button";
 import ManaCost from "@/components/mana-cost";
+import ColorIdentityPips from "@/components/color-identity";
+import CardStats from "@/components/card-stats";
+import CardName from "@/components/card-name";
+import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
@@ -12,7 +16,10 @@ interface CardData {
   manaCost: string | null;
   manaValue: number;
   type: string;
+  types: string[];
+  colors: string[];
   colorIdentity: string[];
+  oracleText: string | null;
 }
 
 interface OwnedCollectionEntry {
@@ -37,6 +44,12 @@ interface DeckData {
   critique: string | null;
 }
 
+interface SuggestedCard {
+  card: CardData;
+  tag: string;
+  reason: string;
+}
+
 function sortDeckCards(cards: DeckCardData[]): DeckCardData[] {
   return [...cards].sort((a, b) => {
     if (a.isCommander !== b.isCommander) {
@@ -48,14 +61,16 @@ function sortDeckCards(cards: DeckCardData[]): DeckCardData[] {
 
 export default function DeckPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const deckId = params.id;
 
   const [deck, setDeck] = useState<DeckData | null>(null);
+  const [isDeletingDeck, setIsDeletingDeck] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isCritiquing, setIsCritiquing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestedCards, setSuggestedCards] = useState<CardData[]>([]);
+  const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
@@ -64,6 +79,7 @@ export default function DeckPage() {
   const [isLoadingCollection, setIsLoadingCollection] = useState(false);
   const [collectionQuery, setCollectionQuery] = useState("");
   const [switchingCardId, setSwitchingCardId] = useState<string | null>(null);
+  const [otherDeckCardIds, setOtherDeckCardIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!deckId) {
@@ -144,6 +160,37 @@ export default function DeckPage() {
     return () => controller.abort();
   }, [deckId]);
 
+  useEffect(() => {
+    if (!deckId) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadOtherDeckCardIds() {
+      try {
+        const response = await fetch(`/api/decks/${deckId}/other-deck-card-ids`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as string[];
+        setOtherDeckCardIds(new Set(data));
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    loadOtherDeckCardIds();
+
+    return () => controller.abort();
+  }, [deckId]);
+
   async function handleBuildDeck() {
     setError(null);
     setIsBuilding(true);
@@ -201,7 +248,7 @@ export default function DeckPage() {
         return;
       }
 
-      const data = (await response.json()) as CardData[];
+      const data = (await response.json()) as SuggestedCard[];
       setSuggestedCards(data);
     } catch {
       setError("Something went wrong getting card suggestions for this deck.");
@@ -229,7 +276,7 @@ export default function DeckPage() {
 
       const data = (await response.json()) as DeckData;
       setDeck(data);
-      setSuggestedCards((current) => current.filter((card) => card.id !== cardId));
+      setSuggestedCards((current) => current.filter((suggestion) => suggestion.card.id !== cardId));
     } catch {
       setError("Something went wrong adding this card to the deck.");
     } finally {
@@ -320,6 +367,30 @@ export default function DeckPage() {
     }
   }
 
+  async function handleDeleteDeck() {
+    if (!deck || !window.confirm(`Delete "${deck.name}"? This can't be undone.`)) {
+      return;
+    }
+
+    setError(null);
+    setIsDeletingDeck(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}`, { method: "DELETE" });
+
+      if (!response.ok) {
+        setError("Something went wrong deleting this deck.");
+        return;
+      }
+
+      router.push("/decks");
+    } catch {
+      setError("Something went wrong deleting this deck.");
+    } finally {
+      setIsDeletingDeck(false);
+    }
+  }
+
   async function handleSwitchCommander(cardId: string) {
     setError(null);
     setSwitchingCardId(cardId);
@@ -363,7 +434,6 @@ export default function DeckPage() {
   }
 
   const sortedCards = sortDeckCards(deck.cards);
-  const totalCards = deck.cards.reduce((sum, deckCard) => sum + deckCard.quantity, 0);
 
   const deckCardIds = new Set(deck.cards.map((deckCard) => deckCard.cardId));
   const builtCommanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
@@ -389,7 +459,17 @@ export default function DeckPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <h1 className="font-display text-2xl tracking-wide">{deck.name}</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-display text-3xl tracking-wide">{deck.name}</h1>
+        <Button
+          variant="secondary"
+          className="px-4 py-1 text-xs text-danger"
+          disabled={isDeletingDeck}
+          onClick={handleDeleteDeck}
+        >
+          {isDeletingDeck ? "Deleting..." : "Delete deck"}
+        </Button>
+      </div>
 
       {commanderDeckCards.length > 0 ? (
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -397,16 +477,30 @@ export default function DeckPage() {
             const isActive = deckCard.cardId === deck.commanderCardId;
 
             return (
-              <div key={deckCard.id} className="flex-1 rounded-lg border p-4 shadow-sm">
+              <div key={deckCard.id} className="card flex-1 overflow-hidden">
+                <div className="mb-3 -mx-6 -mt-6 flex h-1.5">
+                  {WUBRG_ORDER.filter((letter) => deckCard.card.colorIdentity.includes(letter)).map(
+                    (letter) => (
+                      <span
+                        key={letter}
+                        className="flex-1"
+                        style={{ backgroundColor: PIP_COLORS[letter] }}
+                      />
+                    ),
+                  )}
+                </div>
                 <p className="text-sm font-medium text-muted">
                   Commander{commanderDeckCards.length > 1 && isActive ? " (Active)" : ""}
                 </p>
                 <p className="text-lg font-medium">
-                  {deckCard.card.name}
+                  <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
                   {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
-                    <span className="ml-2 rounded bg-danger/10 px-1.5 py-0.5 text-xs text-danger">
+                    <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
                       Not owned
                     </span>
+                  ) : null}
+                  {otherDeckCardIds.has(deckCard.cardId) ? (
+                    <span className="tag-badge ml-2">In another deck</span>
                   ) : null}
                 </p>
                 <p className="text-sm text-muted">
@@ -422,7 +516,7 @@ export default function DeckPage() {
                 {!isActive ? (
                   <Button
                     variant="secondary"
-                    className="mt-2 px-3 py-1 text-xs"
+                    className="mt-2 px-4 py-1 text-xs"
                     disabled={switchingCardId === deckCard.cardId}
                     onClick={() => handleSwitchCommander(deckCard.cardId)}
                   >
@@ -438,15 +532,15 @@ export default function DeckPage() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       {deck.cards.length === 0 ? (
-        <Button onClick={handleBuildDeck} disabled={isBuilding} className="self-start px-4 py-2">
+        <Button onClick={handleBuildDeck} disabled={isBuilding} className="self-start px-7 py-3">
           {isBuilding ? "Building..." : "Build deck"}
         </Button>
       ) : (
         <>
-          <p className="text-sm text-muted">{totalCards} cards</p>
+          <CardStats entries={deck.cards} label="cards in deck" />
           <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b">
+              <tr className="border-b border-border">
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium">Mana cost</th>
                 <th className="py-2 pr-4 font-medium">Type</th>
@@ -456,14 +550,20 @@ export default function DeckPage() {
             </thead>
             <tbody>
               {sortedCards.map((deckCard) => (
-                <tr key={deckCard.id} className="border-b">
+                <tr key={deckCard.id} className="border-b border-border">
                   <td className="py-2 pr-4">
-                    {deckCard.card.name}
+                    <span className="mr-2 inline-block">
+                      <ColorIdentityPips colors={deckCard.card.colorIdentity} />
+                    </span>
+                    <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
                     {deckCard.isCommander ? " (Commander)" : ""}
                     {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
-                      <span className="ml-2 rounded bg-danger/10 px-1.5 py-0.5 text-xs text-danger">
+                      <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
                         Not owned
                       </span>
+                    ) : null}
+                    {otherDeckCardIds.has(deckCard.cardId) ? (
+                      <span className="tag-badge ml-2">In another deck</span>
                     ) : null}
                   </td>
                   <td className="py-2 pr-4">
@@ -499,7 +599,7 @@ export default function DeckPage() {
                     {deckCard.isCommander ? null : (
                       <Button
                         variant="secondary"
-                        className="px-3 py-1 text-xs"
+                        className="px-4 py-1 text-xs"
                         disabled={removingCardId === deckCard.cardId}
                         onClick={() => handleRemoveCard(deckCard.cardId)}
                       >
@@ -512,10 +612,10 @@ export default function DeckPage() {
             </tbody>
           </table>
 
-          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
+          <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Deck critique</p>
-              <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-4 py-2">
+              <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-5 py-2 text-sm">
                 {isCritiquing
                   ? "Getting critique..."
                   : deck.critique
@@ -528,19 +628,25 @@ export default function DeckPage() {
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
+          <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Card suggestions</p>
-              <Button onClick={handleGetSuggestions} disabled={isSuggesting} className="self-start px-4 py-2">
+              <Button onClick={handleGetSuggestions} disabled={isSuggesting} className="self-start px-5 py-2 text-sm">
                 {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
               </Button>
             </div>
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
-                {suggestedCards.map((card) => (
+                {suggestedCards.map(({ card, tag, reason }) => (
                   <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
                     <span>
-                      {card.name}
+                      <span className="mr-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                        {tag}
+                      </span>
+                      <CardName name={card.name} oracleText={card.oracleText} />
+                      {otherDeckCardIds.has(card.id) ? (
+                        <span className="tag-badge ml-2">In another deck</span>
+                      ) : null}
                       <span className="text-muted">
                         {card.manaCost ? (
                           <>
@@ -552,12 +658,13 @@ export default function DeckPage() {
                         )}{" "}
                         - {card.type}
                       </span>
+                      <span className="block text-xs text-muted">{reason}</span>
                     </span>
                     <Button
                       variant="secondary"
                       onClick={() => handleAddCard(card.id)}
                       disabled={addingCardId === card.id}
-                      className="px-3 py-1"
+                      className="px-4 py-1 text-xs"
                     >
                       {addingCardId === card.id ? "Adding..." : "Add"}
                     </Button>
@@ -567,7 +674,7 @@ export default function DeckPage() {
             ) : null}
           </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
+          <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Add from collection</p>
               {collectionCards ? (
@@ -575,7 +682,7 @@ export default function DeckPage() {
                   variant="secondary"
                   onClick={handleLoadCollection}
                   disabled={isLoadingCollection}
-                  className="self-start px-4 py-2 text-sm"
+                  className="self-start px-5 py-2 text-sm"
                 >
                   {isLoadingCollection ? "Refreshing..." : "Refresh"}
                 </Button>
@@ -591,7 +698,7 @@ export default function DeckPage() {
                   value={collectionQuery}
                   onChange={(event) => setCollectionQuery(event.target.value)}
                   placeholder="Search your collection"
-                  className="rounded border px-3 py-2 text-sm"
+                  className="input text-sm"
                 />
                 {availableCollectionCards.length === 0 ? (
                   <p className="text-sm text-muted">No owned cards match.</p>
@@ -600,7 +707,10 @@ export default function DeckPage() {
                     {availableCollectionCards.map((card) => (
                       <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
                         <span>
-                          {card.name}
+                          <CardName name={card.name} oracleText={card.oracleText} />
+                          {otherDeckCardIds.has(card.id) ? (
+                            <span className="tag-badge ml-2">In another deck</span>
+                          ) : null}
                           <span className="text-muted">
                             {card.manaCost ? (
                           <>
@@ -617,7 +727,7 @@ export default function DeckPage() {
                           variant="secondary"
                           onClick={() => handleAddCard(card.id)}
                           disabled={addingCardId === card.id}
-                          className="px-3 py-1"
+                          className="px-4 py-1 text-xs"
                         >
                           {addingCardId === card.id ? "Adding..." : "Add"}
                         </Button>

@@ -11,36 +11,40 @@ export default async function Navbar() {
   const session = await auth();
   const isLoggedIn = !!session?.user;
 
+  const navLinkClasses =
+    "text-xs font-bold uppercase tracking-wide text-white transition-[filter] " +
+    "hover:[filter:drop-shadow(0_0_8px_var(--primary))]";
+
   return (
-    <div className="border-b bg-surface shadow-sm">
-      <nav className="flex items-center justify-between px-4 py-3">
-        <Link href="/" className="font-display text-lg tracking-wide text-primary">
+    <div className="bg-[#0c0f11]">
+      <nav className="flex h-[54px] items-center justify-between px-4">
+        <Link href="/" className="font-display text-lg tracking-wide text-white">
           MTG Deckbuilder
         </Link>
 
         {isLoggedIn ? (
-          <div className="flex items-center gap-4 text-sm">
-            <Link href="/collection" className="hover:text-primary">
+          <div className="flex items-center gap-6">
+            <Link href="/collection" className={navLinkClasses}>
               Collection
             </Link>
-            <Link href="/import" className="hover:text-primary">
+            <Link href="/import" className={navLinkClasses}>
               Import
             </Link>
-            <Link href="/decks" className="hover:text-primary">
+            <Link href="/decks" className={navLinkClasses}>
               My Decks
             </Link>
             <form action={logoutAction}>
-              <Button type="submit" variant="secondary" className="px-3 py-1">
+              <Button type="submit" variant="secondary" className="px-3 py-1 text-xs text-white">
                 Log out
               </Button>
             </form>
           </div>
         ) : (
-          <div className="flex items-center gap-4 text-sm">
-            <Link href="/login" className="hover:text-primary">
+          <div className="flex items-center gap-6">
+            <Link href="/login" className={navLinkClasses}>
               Log in
             </Link>
-            <Link href="/signup" className="hover:text-primary">
+            <Link href="/signup" className={navLinkClasses}>
               Sign up
             </Link>
           </div>

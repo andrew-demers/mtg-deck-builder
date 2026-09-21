@@ -8,6 +8,10 @@ vi.mock("@/lib/prisma", () => ({
     collectionEntry: {
       findMany: vi.fn(),
     },
+    card: {
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+    },
   },
 }));
 
@@ -23,6 +27,8 @@ const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeo
 const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<
   typeof vi.fn
 >;
+const cardFindManyMock = prisma.card.findMany as unknown as ReturnType<typeof vi.fn>;
+const cardFindFirstMock = prisma.card.findFirst as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
 
 function card(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -95,6 +101,8 @@ describe("buildDeck", () => {
   beforeEach(() => {
     deckFindUniqueMock.mockReset();
     collectionFindManyMock.mockReset();
+    cardFindManyMock.mockReset();
+    cardFindFirstMock.mockReset();
     getLlmProviderMock.mockReset();
   });
 
@@ -218,5 +226,139 @@ describe("buildDeck", () => {
 
     const blueEntry = result.cards.find((c) => c.cardId === "blue_card");
     expect(blueEntry).toBeDefined();
+  });
+
+  it("does not query the catalog when allowUnowned is false", async () => {
+    const owned = makeOwnedPool(99, ["W", "U", "B", "G"]);
+    mockDeckAndCollection(owned);
+    mockCompletion(owned.map((c) => c.name as string).join("\n"));
+
+    await buildDeck("deck_1");
+
+    expect(cardFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts an unowned pick from the catalog when allowUnowned is true", async () => {
+    const owned = makeOwnedPool(50, ["W", "U", "B", "G"]);
+    const unowned = card({
+      id: "unowned_card",
+      name: "Unowned Card",
+      colorIdentity: ["W"],
+    });
+    const land = plains();
+    mockDeckAndCollection(owned);
+    cardFindManyMock.mockResolvedValue([unowned]);
+    cardFindFirstMock.mockResolvedValue(land);
+    mockCompletion([...owned.map((c) => c.name as string), unowned.name as string].join("\n"));
+
+    const result = await buildDeck("deck_1", { allowUnowned: true });
+
+    expect(cardFindManyMock).toHaveBeenCalled();
+    const unownedEntry = result.cards.find((c) => c.cardId === "unowned_card");
+    expect(unownedEntry).toEqual({ cardId: "unowned_card", quantity: 1, isCommander: false });
+  });
+
+  it("backfills from the catalog when allowUnowned is true and the user owns no basic lands", async () => {
+    const owned = makeOwnedPool(10, ["W", "U", "B", "G"]);
+    const catalogLand = card({
+      id: "catalog_plains",
+      name: "Plains",
+      colorIdentity: ["W"],
+      type: "Basic Land — Plains",
+    });
+    mockDeckAndCollection(owned);
+    cardFindManyMock.mockResolvedValue([]);
+    cardFindFirstMock.mockResolvedValue(catalogLand);
+    mockCompletion(owned.map((c) => c.name as string).join("\n"));
+
+    const result = await buildDeck("deck_1", { allowUnowned: true });
+
+    const landEntry = result.cards.find((c) => c.cardId === "catalog_plains");
+    expect(landEntry?.quantity).toBe(99 - owned.length);
+  });
+
+  it("does not backfill with an owned basic land outside the commander's color identity", async () => {
+    const monoRedCommander = card({
+      id: "smaug",
+      name: "Smaug, the Magnificent",
+      colorIdentity: ["R"],
+      isCommanderEligible: true,
+    });
+    const legalOwned = makeOwnedPool(3, ["R"]);
+    const offColorLand = card({
+      id: "island",
+      name: "Island",
+      colorIdentity: ["U"],
+      type: "Basic Land — Island",
+    });
+
+    deckFindUniqueMock.mockResolvedValue({
+      id: "deck_1",
+      userId: "user_1",
+      name: "Test Deck",
+      commanderCardId: monoRedCommander.id,
+      commanderCard: monoRedCommander,
+      cards: [],
+    });
+    collectionFindManyMock.mockResolvedValue(
+      [...legalOwned, offColorLand].map((c) => ({ card: c })),
+    );
+    mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
+
+    await expect(buildDeck("deck_1")).rejects.toThrow(DeckBuildError);
+  });
+
+  it("backfills from the catalog instead of an off-color owned land when allowUnowned is true", async () => {
+    const monoRedCommander = card({
+      id: "smaug",
+      name: "Smaug, the Magnificent",
+      colorIdentity: ["R"],
+      isCommanderEligible: true,
+    });
+    const legalOwned = makeOwnedPool(3, ["R"]);
+    const offColorLand = card({
+      id: "island",
+      name: "Island",
+      colorIdentity: ["U"],
+      type: "Basic Land — Island",
+    });
+    const catalogMountain = card({
+      id: "catalog_mountain",
+      name: "Mountain",
+      colorIdentity: ["R"],
+      type: "Basic Land — Mountain",
+    });
+
+    deckFindUniqueMock.mockResolvedValue({
+      id: "deck_1",
+      userId: "user_1",
+      name: "Test Deck",
+      commanderCardId: monoRedCommander.id,
+      commanderCard: monoRedCommander,
+      cards: [],
+    });
+    collectionFindManyMock.mockResolvedValue(
+      [...legalOwned, offColorLand].map((c) => ({ card: c })),
+    );
+    cardFindManyMock.mockResolvedValue([]);
+    cardFindFirstMock.mockResolvedValue(catalogMountain);
+    mockCompletion(legalOwned.map((c) => c.name as string).join("\n"));
+
+    const result = await buildDeck("deck_1", { allowUnowned: true });
+
+    const islandEntry = result.cards.find((c) => c.cardId === "island");
+    expect(islandEntry).toBeUndefined();
+    const mountainEntry = result.cards.find((c) => c.cardId === "catalog_mountain");
+    expect(mountainEntry?.quantity).toBe(99 - legalOwned.length);
+  });
+
+  it("throws when allowUnowned is true but no basic land exists anywhere to backfill with", async () => {
+    const owned = makeOwnedPool(10, ["W", "U", "B", "G"]);
+    mockDeckAndCollection(owned);
+    cardFindManyMock.mockResolvedValue([]);
+    cardFindFirstMock.mockResolvedValue(null);
+    mockCompletion(owned.map((c) => c.name as string).join("\n"));
+
+    await expect(buildDeck("deck_1", { allowUnowned: true })).rejects.toThrow(DeckBuildError);
   });
 });

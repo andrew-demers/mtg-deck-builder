@@ -7,9 +7,10 @@ import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
  * POST /api/decks/[id]/suggest-cards - session-scoped. Asks the LLM to
  * suggest additions to a deck the caller owns from the caller's remaining
  * owned cards (not already fully used in this deck), filtered to the
- * commander's color identity, and returns the matched `Card`s. 404 if the
- * deck doesn't exist, 403 if it belongs to a different user, 400 if the
- * deck has no commander set.
+ * commander's color identity, and returns each matched `Card` alongside a
+ * short tag and a one-sentence reason for the suggestion. 404 if the deck
+ * doesn't exist, 403 if it belongs to a different user, 400 if the deck has
+ * no commander set.
  */
 export async function POST(
   _request: Request,

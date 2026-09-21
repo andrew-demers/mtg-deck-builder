@@ -55,17 +55,11 @@ export default function ImportPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="font-display text-2xl tracking-wide">Import collection</h1>
+      <h1 className="font-display text-3xl tracking-wide">Import collection</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium">ManaBox CSV export</span>
-          <input
-            name="file"
-            type="file"
-            accept=".csv"
-            required
-            className="rounded border px-3 py-2"
-          />
+          <input name="file" type="file" accept=".csv" required className="input" />
         </label>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
         {summary ? (
@@ -73,7 +67,7 @@ export default function ImportPage() {
             Matched: {summary.matched}, Unmatched: {summary.unmatched}
           </p>
         ) : null}
-        <Button type="submit" disabled={isSubmitting} className="px-4 py-2">
+        <Button type="submit" disabled={isSubmitting} className="px-7 py-3">
           {isSubmitting ? "Importing..." : "Import"}
         </Button>
       </form>

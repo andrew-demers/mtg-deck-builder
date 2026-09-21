@@ -176,7 +176,7 @@ describe("POST /api/collection/unmatched/[id]/resolve", () => {
     expect(createEntryMock).not.toHaveBeenCalled();
     expect(updateEntryMock).toHaveBeenCalledWith({
       where: { id: "entry_1" },
-      data: { quantity: 5 },
+      data: { quantity: 5, setCode: "XYZ", sourceScryfallId: undefined },
     });
   });
 

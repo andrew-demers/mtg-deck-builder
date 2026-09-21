@@ -13,6 +13,7 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -32,10 +33,16 @@ const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeo
 const deckCardFindUniqueMock = prisma.deckCard.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckCardUpdateMock = prisma.deckCard.update as unknown as ReturnType<typeof vi.fn>;
 const deckCardCreateMock = prisma.deckCard.create as unknown as ReturnType<typeof vi.fn>;
+const deckCardDeleteManyMock = prisma.deckCard.deleteMany as unknown as ReturnType<typeof vi.fn>;
 const buildDeckMock = buildDeck as unknown as ReturnType<typeof vi.fn>;
 
-function buildRequest(): Request {
-  return new Request("http://localhost/api/decks/deck_1/build", { method: "POST" });
+function buildRequest(body?: unknown): Request {
+  return new Request("http://localhost/api/decks/deck_1/build", {
+    method: "POST",
+    ...(body !== undefined
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : {}),
+  });
 }
 
 function buildParams(id: string): { params: Promise<{ id: string }> } {
@@ -49,6 +56,7 @@ describe("POST /api/decks/[id]/build", () => {
     deckCardFindUniqueMock.mockReset();
     deckCardUpdateMock.mockReset();
     deckCardCreateMock.mockReset();
+    deckCardDeleteManyMock.mockReset();
     buildDeckMock.mockReset();
   });
 
@@ -186,5 +194,60 @@ describe("POST /api/decks/[id]/build", () => {
       data: { quantity: 1, isCommander: false },
     });
     expect(deckCardCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes DeckCard rows for cards no longer in the new build result", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValueOnce({
+      id: "deck_1",
+      userId: "user_1",
+      commanderCardId: "commander",
+    });
+
+    buildDeckMock.mockResolvedValue({
+      cards: [
+        { cardId: "commander", quantity: 1, isCommander: true },
+        { cardId: "mountain", quantity: 99, isCommander: false },
+      ],
+    });
+
+    deckCardFindUniqueMock.mockResolvedValue(null);
+    deckFindUniqueMock.mockResolvedValueOnce({ id: "deck_1" });
+
+    await POST(buildRequest(), buildParams("deck_1"));
+
+    expect(deckCardDeleteManyMock).toHaveBeenCalledWith({
+      where: { deckId: "deck_1", cardId: { notIn: ["commander", "mountain"] } },
+    });
+  });
+
+  it("defaults allowUnowned to false when the request has no body", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValueOnce({
+      id: "deck_1",
+      userId: "user_1",
+      commanderCardId: "commander",
+    });
+    buildDeckMock.mockResolvedValue({ cards: [] });
+    deckFindUniqueMock.mockResolvedValueOnce({ id: "deck_1" });
+
+    await POST(buildRequest(), buildParams("deck_1"));
+
+    expect(buildDeckMock).toHaveBeenCalledWith("deck_1", { allowUnowned: false });
+  });
+
+  it("passes allowUnowned through from the request body", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValueOnce({
+      id: "deck_1",
+      userId: "user_1",
+      commanderCardId: "commander",
+    });
+    buildDeckMock.mockResolvedValue({ cards: [] });
+    deckFindUniqueMock.mockResolvedValueOnce({ id: "deck_1" });
+
+    await POST(buildRequest({ allowUnowned: true }), buildParams("deck_1"));
+
+    expect(buildDeckMock).toHaveBeenCalledWith("deck_1", { allowUnowned: true });
   });
 });

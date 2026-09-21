@@ -39,7 +39,7 @@ export default function SignupPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="font-display text-2xl tracking-wide">Sign up</h1>
+      <h1 className="font-display text-3xl tracking-wide">Sign up</h1>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium">Email</span>
@@ -48,7 +48,7 @@ export default function SignupPage() {
             required
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="rounded border px-3 py-2"
+            className="input"
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -59,11 +59,11 @@ export default function SignupPage() {
             minLength={8}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="rounded border px-3 py-2"
+            className="input"
           />
         </label>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <Button type="submit" disabled={isSubmitting} className="px-4 py-2">
+        <Button type="submit" disabled={isSubmitting} className="px-7 py-3">
           {isSubmitting ? "Signing up..." : "Sign up"}
         </Button>
       </form>

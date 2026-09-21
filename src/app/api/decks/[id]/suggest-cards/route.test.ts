@@ -35,9 +35,13 @@ function buildParams(id: string): { params: Promise<{ id: string }> } {
 }
 
 const suggestedCard = {
-  id: "card_valid",
-  name: "Valid Card",
-  colorIdentity: ["W"],
+  card: {
+    id: "card_valid",
+    name: "Valid Card",
+    colorIdentity: ["W"],
+  },
+  tag: "Ramp",
+  reason: "Helps ramp into the commander's high cost.",
 };
 
 describe("POST /api/decks/[id]/suggest-cards", () => {

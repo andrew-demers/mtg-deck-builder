@@ -4,12 +4,14 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Button from "@/components/button";
 import ManaCost from "@/components/mana-cost";
+import CardName from "@/components/card-name";
 
 interface SuggestedCard {
   id: string;
   name: string;
   type: string;
   manaCost: string | null;
+  oracleText: string | null;
 }
 
 export default function NewDeckPage() {
@@ -81,18 +83,20 @@ export default function NewDeckPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="font-display text-2xl tracking-wide">New deck</h1>
+      <h1 className="font-display text-3xl tracking-wide">New deck</h1>
       <p className="text-sm text-muted">
         Ask for a Commander suggestion from your collection, then build a deck around it.
       </p>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <Button onClick={requestSuggestion} disabled={isSuggesting} className="px-4 py-2">
+      <Button onClick={requestSuggestion} disabled={isSuggesting} className="px-7 py-3">
         {isSuggesting ? "Suggesting..." : "Suggest a commander"}
       </Button>
       {suggestion ? (
-        <div className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
+        <div className="card flex flex-col gap-3">
           <div>
-            <p className="font-medium">{suggestion.name}</p>
+            <p className="font-medium">
+              <CardName name={suggestion.name} oracleText={suggestion.oracleText} />
+            </p>
             <p className="text-sm text-muted">
               {suggestion.manaCost ? (
                 <>
@@ -110,10 +114,10 @@ export default function NewDeckPage() {
               type="text"
               value={deckName}
               onChange={(event) => setDeckName(event.target.value)}
-              className="rounded border px-3 py-2"
+              className="input"
             />
           </label>
-          <Button onClick={useSuggestion} disabled={isCreating} className="self-start px-4 py-2 text-sm">
+          <Button onClick={useSuggestion} disabled={isCreating} className="self-start px-5 py-2 text-sm">
             {isCreating ? "Creating..." : "Use this commander"}
           </Button>
         </div>

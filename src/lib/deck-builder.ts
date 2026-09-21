@@ -17,20 +17,35 @@ export interface BuildDeckResult {
   cards: DeckBuildCard[];
 }
 
+export interface BuildDeckOptions {
+  /**
+   * When true, the LLM's pool is widened from the user's owned collection to
+   * every catalog card within the commander's color identity, so it may pick
+   * strong cards the user doesn't yet own (surfaced to the user as "not
+   * owned" elsewhere). Defaults to false - owned cards only.
+   */
+  allowUnowned?: boolean;
+}
+
 /**
  * Builds a full 100-card Commander deck around a deck's already-chosen
- * commander, picking the other 99 cards from the user's owned collection via
- * the configured LLM provider.
+ * commander, picking the other 99 cards via the configured LLM provider -
+ * from the user's owned collection by default, or from the full card catalog
+ * (filtered to the commander's color identity) when `allowUnowned` is set.
  *
  * The LLM's picks are never trusted directly: each returned name is matched
- * case-insensitively against the user's owned (non-commander) cards, and
- * every match is re-checked against color identity and singleton before
- * being accepted. Anything hallucinated (not owned), off-color, or a repeat
- * of a nonland card already picked is dropped silently rather than surfaced
- * as an error, since the backfill step below exists precisely to make up
- * for a shortfall.
+ * case-insensitively against the offered pool, and every match is
+ * re-checked against color identity and singleton before being accepted.
+ * Anything hallucinated, off-color, or a repeat of a nonland card already
+ * picked is dropped silently rather than surfaced as an error, since the
+ * backfill step below exists precisely to make up for a shortfall.
  */
-export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
+export async function buildDeck(
+  deckId: string,
+  options: BuildDeckOptions = {},
+): Promise<BuildDeckResult> {
+  const allowUnowned = options.allowUnowned ?? false;
+
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
     include: { commanderCard: true, cards: { include: { card: true } } },
@@ -52,6 +67,7 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
   const commanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
   const commanders =
     commanderDeckCards.length > 0 ? commanderDeckCards.map((deckCard) => deckCard.card) : [commander];
+  const colorIdentity = unionColorIdentity(commanders);
 
   const entries = await prisma.collectionEntry.findMany({
     where: { userId: deck.userId },
@@ -62,10 +78,14 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
   // pool offered to the LLM (and from anything matched back against it).
   const ownedPool = entries.map((entry) => entry.card).filter((card) => card.id !== commander.id);
 
-  const completion = await getLlmProvider().complete(buildPrompt(commanders, ownedPool));
+  const pool = allowUnowned
+    ? dedupeById([...ownedPool, ...(await findCatalogCardsInColorIdentity(colorIdentity, commander.id))])
+    : ownedPool;
+
+  const completion = await getLlmProvider().complete(buildPrompt(commanders, pool, allowUnowned));
   const pickedNames = parsePickedNames(completion);
 
-  const cardsByName = new Map(ownedPool.map((card) => [normalize(card.name), card]));
+  const cardsByName = new Map(pool.map((card) => [normalize(card.name), card]));
 
   const accepted = new Map<string, number>();
 
@@ -79,7 +99,7 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
       continue; // hallucinated or not owned
     }
 
-    if (!validateColorIdentity(unionColorIdentity(commanders), [card])) {
+    if (!validateColorIdentity(colorIdentity, [card])) {
       continue; // outside the commander's color identity
     }
 
@@ -94,19 +114,28 @@ export async function buildDeck(deckId: string): Promise<BuildDeckResult> {
   const shortfall = NON_COMMANDER_DECK_SIZE - sumQuantities(accepted);
 
   if (shortfall > 0) {
-    const ownedBasicLands = ownedPool.filter(isBasicLand);
+    // Basic lands are exempt from singleton, but NOT from color identity -
+    // an owned Island is still illegal in a mono-red deck, so it must be
+    // filtered the same as every other card before being used to backfill.
+    const ownedBasicLands = ownedPool.filter(
+      (card) => isBasicLand(card) && validateColorIdentity(colorIdentity, [card]),
+    );
 
-    // Basic lands are exempt from singleton, so any owned basic land can
-    // absorb the entire shortfall as extra quantity. If the user owns none
-    // at all, there's nothing legal left to pad the deck with, so this
-    // fails loudly rather than silently shipping a short deck.
-    if (ownedBasicLands.length === 0) {
+    // Any in-identity owned basic land can absorb the entire shortfall as
+    // extra quantity. If the user owns none at all and unowned cards aren't
+    // allowed, there's nothing legal left to pad the deck with, so this
+    // fails loudly rather than silently shipping a short (or illegal) deck.
+    // When unowned cards are allowed, fall back to any basic land in the
+    // catalog before giving up.
+    const backfillLand =
+      ownedBasicLands[0] ?? (allowUnowned ? await findCatalogBasicLand(colorIdentity) : null);
+
+    if (!backfillLand) {
       throw new DeckBuildError(
         "Could not reach 99 legal cards and the user owns no basic lands to backfill with.",
       );
     }
 
-    const backfillLand = ownedBasicLands[0];
     accepted.set(backfillLand.id, (accepted.get(backfillLand.id) ?? 0) + shortfall);
   }
 
@@ -137,20 +166,67 @@ function parsePickedNames(completion: string): string[] {
     .filter((line) => line.length > 0);
 }
 
-function buildPrompt(commanders: Card[], ownedPool: Card[]): string {
-  const names = ownedPool.map((card) => `- ${card.name}`).join("\n");
+function dedupeById(cards: Card[]): Card[] {
+  const byId = new Map<string, Card>();
+  for (const card of cards) {
+    byId.set(card.id, card);
+  }
+  return Array.from(byId.values());
+}
+
+/**
+ * Cards outside the commander's color identity can never legally join the
+ * deck, so they're excluded at the database level (via the identity's
+ * disallowed colors) rather than fetching the whole catalog and filtering
+ * in memory.
+ */
+function disallowedColors(colorIdentity: string[]): string[] {
+  const allColors = ["W", "U", "B", "R", "G"];
+  return allColors.filter((color) => !colorIdentity.includes(color));
+}
+
+async function findCatalogCardsInColorIdentity(
+  colorIdentity: string[],
+  excludeId: string,
+): Promise<Card[]> {
+  const disallowed = disallowedColors(colorIdentity);
+
+  return prisma.card.findMany({
+    where: {
+      id: { not: excludeId },
+      ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
+    },
+  });
+}
+
+async function findCatalogBasicLand(colorIdentity: string[]): Promise<Card | null> {
+  const disallowed = disallowedColors(colorIdentity);
+
+  return prisma.card.findFirst({
+    where: {
+      type: { contains: "Basic Land" },
+      ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
+    },
+  });
+}
+
+function buildPrompt(commanders: Card[], pool: Card[], allowUnowned: boolean): string {
+  const names = pool.map((card) => `- ${card.name}`).join("\n");
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const colorIdentity = unionColorIdentity(commanders);
+  const poolDescription = allowUnowned
+    ? "the following list of cards, some of which the player owns and some of which they don't"
+    : "the following list of cards the player owns";
 
   return [
     "You are building a Magic: The Gathering Commander/EDH deck.",
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
-    "Pick exactly 99 more cards for this deck from the following list of cards the player owns.",
+    `Pick exactly 99 more cards for this deck from ${poolDescription}.`,
     "Every card must be within the commander's color identity, and every nonland card may appear at most once (singleton). Basic lands may repeat.",
     "Respond with one card name per line and nothing else.",
     "",
-    "Owned cards:",
+    `${allowUnowned ? "Available" : "Owned"} cards:`,
     names,
   ].join("\n");
 }

@@ -1,4 +1,6 @@
-const PIP_COLORS: Record<string, string> = {
+export const WUBRG_ORDER = ["W", "U", "B", "R", "G"];
+
+export const PIP_COLORS: Record<string, string> = {
   W: "var(--mana-white)",
   U: "var(--mana-blue)",
   B: "var(--mana-black)",
@@ -6,7 +8,7 @@ const PIP_COLORS: Record<string, string> = {
   G: "var(--mana-green)",
 };
 
-function pipColor(symbol: string): { background: string; foreground: string } {
+export function pipColor(symbol: string): { background: string; foreground: string } {
   const colorLetter = Object.keys(PIP_COLORS).find((letter) => symbol.includes(letter));
 
   if (!colorLetter) {

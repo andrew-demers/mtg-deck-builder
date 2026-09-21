@@ -115,7 +115,10 @@ describe("POST /api/collection/import", () => {
     });
   });
 
-  it("increments quantity instead of duplicating when a matching CollectionEntry already exists", async () => {
+  it("sets quantity to match the import instead of adding when a matching CollectionEntry already exists", async () => {
+    // ManaBox (and similar tools) export a full collection snapshot each
+    // time, so re-importing the same export must not double the counts -
+    // the imported quantity replaces the stored one rather than adding to it.
     authMock.mockResolvedValue({ user: { id: "user_1" } });
     findFirstMock.mockResolvedValue({ id: "card_sol_ring", name: "Sol Ring" });
     findUniqueMock.mockResolvedValue({
@@ -135,7 +138,7 @@ describe("POST /api/collection/import", () => {
     expect(createEntryMock).not.toHaveBeenCalled();
     expect(updateEntryMock).toHaveBeenCalledWith({
       where: { id: "entry_1" },
-      data: { quantity: 7 },
+      data: { quantity: 2, setCode: "C21", sourceScryfallId: null },
     });
   });
 

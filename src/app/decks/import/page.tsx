@@ -65,28 +65,22 @@ export default function ImportDeckPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 px-4">
-      <h1 className="font-display text-2xl tracking-wide">Import decklist</h1>
+      <h1 className="font-display text-3xl tracking-wide">Import decklist</h1>
       <p className="text-sm text-muted">
         Import a deck exported from ManaBox as a .txt decklist, including a Partner/Background pair.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium">ManaBox decklist export</span>
-          <input
-            name="file"
-            type="file"
-            accept=".txt"
-            required
-            className="rounded border px-3 py-2"
-          />
+          <input name="file" type="file" accept=".txt" required className="input" />
         </label>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
-        <Button type="submit" disabled={isSubmitting} className="px-4 py-2">
+        <Button type="submit" disabled={isSubmitting} className="px-7 py-3">
           {isSubmitting ? "Importing..." : "Import"}
         </Button>
       </form>
       {result ? (
-        <div className="flex flex-col gap-2 rounded-lg border p-4 shadow-sm">
+        <div className="card flex flex-col gap-2">
           <p className="text-sm font-medium">
             Commander{commanderNames.length > 1 ? "s" : ""}: {commanderNames.join(" + ")}
           </p>
@@ -96,7 +90,7 @@ export default function ImportDeckPage() {
               Not found in the catalog: {result.unmatchedNames.join(", ")}
             </p>
           ) : null}
-          <LinkButton href={`/decks/${result.id}`} className="self-start px-4 py-2 text-sm">
+          <LinkButton href={`/decks/${result.id}`} className="self-start px-5 py-2 text-sm">
             View deck
           </LinkButton>
         </div>

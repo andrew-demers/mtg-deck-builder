@@ -5,6 +5,12 @@ import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
 
+export interface SuggestedCard {
+  card: Card;
+  tag: string;
+  reason: string;
+}
+
 /**
  * Asks the LLM to suggest additions to an existing deck from the user's
  * *remaining* owned cards - cards in `CollectionEntry` whose owned quantity
@@ -16,9 +22,12 @@ export class CardSuggestionError extends Error {}
  * matched case-insensitively against the remaining-owned pool, and every
  * match is re-checked against the commander's color identity before being
  * accepted. Anything hallucinated (not owned, or already fully used),
- * off-color, or duplicated across suggestions is dropped silently.
+ * off-color, or duplicated across suggestions is dropped silently. The tag
+ * and reason accompanying an accepted name are trusted as-is (unlike the
+ * card name, there's no ground truth to validate free-text explanations
+ * against).
  */
-export async function suggestCards(deckId: string): Promise<Card[]> {
+export async function suggestCards(deckId: string): Promise<SuggestedCard[]> {
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
     include: { commanderCard: true, cards: { include: { card: true } } },
@@ -77,12 +86,12 @@ export async function suggestCards(deckId: string): Promise<Card[]> {
   }
 
   const completion = await getLlmProvider().complete(buildPrompt(commanders, remainingPool));
-  const suggestedNames = parseNames(completion);
+  const suggestions = parseSuggestions(completion);
 
   const cardsByName = new Map(remainingPool.map((card) => [normalize(card.name), card]));
 
-  const matched = new Map<string, Card>();
-  for (const name of suggestedNames) {
+  const matched = new Map<string, SuggestedCard>();
+  for (const { name, tag, reason } of suggestions) {
     const card = cardsByName.get(normalize(name));
     if (!card) {
       continue; // hallucinated, or owned but with no remaining availability
@@ -92,7 +101,7 @@ export async function suggestCards(deckId: string): Promise<Card[]> {
       continue; // outside the commander's color identity
     }
 
-    matched.set(card.id, card);
+    matched.set(card.id, { card, tag, reason });
   }
 
   return Array.from(matched.values());
@@ -102,11 +111,16 @@ function normalize(name: string): string {
   return name.trim().toLowerCase();
 }
 
-function parseNames(completion: string): string[] {
+function parseSuggestions(completion: string): { name: string; tag: string; reason: string }[] {
   return completion
     .split("\n")
     .map((line) => line.replace(/^[\s\d.\-)]+/, "").trim())
-    .filter((line) => line.length > 0);
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const [name, tag, reason] = line.split("::").map((part) => part?.trim());
+      return name && tag && reason ? { name, tag, reason } : null;
+    })
+    .filter((suggestion): suggestion is { name: string; tag: string; reason: string } => suggestion !== null);
 }
 
 function buildPrompt(commanders: Card[], remainingPool: Card[]): string {
@@ -120,7 +134,8 @@ function buildPrompt(commanders: Card[], remainingPool: Card[]): string {
     "",
     "Suggest cards to add to this deck from the following list of cards the player owns but has not yet fully used in this deck.",
     "Every suggestion must be within the commander's color identity.",
-    "Respond with one card name per line and nothing else.",
+    "Respond with one suggestion per line in exactly this format and nothing else:",
+    "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",
     "",
     "Available cards:",
     names,

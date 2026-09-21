@@ -122,7 +122,7 @@ export default function UnmatchedCollectionPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-4 py-12">
-      <h1 className="font-display text-2xl tracking-wide">Resolve unmatched rows</h1>
+      <h1 className="font-display text-3xl tracking-wide">Resolve unmatched rows</h1>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {isLoading ? <p className="text-sm text-muted">Loading...</p> : null}
       {!isLoading && rows.length === 0 ? (
@@ -130,7 +130,7 @@ export default function UnmatchedCollectionPage() {
       ) : null}
       <ul className="flex flex-col gap-6">
         {rows.map((row) => (
-          <li key={row.id} className="flex flex-col gap-3 rounded-lg border p-4 shadow-sm">
+          <li key={row.id} className="card flex flex-col gap-3">
             <div>
               <p className="font-medium">{row.rawName}</p>
               <p className="text-sm text-muted">
@@ -144,7 +144,7 @@ export default function UnmatchedCollectionPage() {
                 type="text"
                 value={queries[row.id] ?? ""}
                 onChange={(event) => handleQueryChange(row.id, event)}
-                className="rounded border px-3 py-2"
+                className="input"
                 placeholder="Card name"
               />
             </label>
@@ -156,7 +156,7 @@ export default function UnmatchedCollectionPage() {
                       variant="secondary"
                       disabled={pendingRowId === row.id}
                       onClick={() => resolveRow(row.id, { cardId: card.id })}
-                      className="w-full px-3 py-2 text-left text-sm"
+                      className="w-full px-4 py-2 text-left text-sm"
                     >
                       {card.name}
                       {card.manaCost ? <ManaCost value={card.manaCost} /> : ""} - {card.type}
@@ -168,7 +168,7 @@ export default function UnmatchedCollectionPage() {
             <Button
               disabled={pendingRowId === row.id}
               onClick={() => resolveRow(row.id, { ignore: true })}
-              className="self-start px-4 py-2 text-sm"
+              className="self-start px-5 py-2 text-sm"
             >
               Ignore
             </Button>

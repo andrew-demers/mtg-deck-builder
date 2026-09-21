@@ -50,6 +50,9 @@ export async function POST(
     quantity: row.quantity,
     foil: row.foil,
     setCode: row.rawSet,
+    // Resolving one unmatched row adds newly-identified cards on top of
+    // whatever's already owned - it's not a full-collection re-sync.
+    onConflict: "add",
   });
 
   await prisma.unmatchedImportRow.update({

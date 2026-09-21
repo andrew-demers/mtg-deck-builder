@@ -1,76 +1,104 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafaf8;
-  --foreground: #1c1a17;
+  /* Canvas - magic.wizards.com never leaves black, so there is no light-mode
+     variant here (see DESIGN.md "Do: keep the canvas black everywhere"). */
+  --background: #000000;
+  --foreground: #ffffff;
+  --surface: #1f2025;
+  --border: rgba(255, 255, 255, 0.1);
+  --muted: rgba(255, 255, 255, 0.55);
 
-  --primary: #1c6fb0;
+  /* Brand */
+  --primary: #ea3601;
+  --primary-pressed: #b93b0d;
   --primary-foreground: #ffffff;
-
-  --border: #e2ddd3;
-  --muted: #6b6459;
-  --danger: #b3392c;
-  --surface: #ffffff;
+  --danger: #ea3601;
 
   /* The five Commander color-identity colors (WUBRG), used as a decorative
      brand accent (see the navbar stripe) - not as general-purpose UI colors,
      since mixing all five as interactive-element colors would be
-     inconsistent/inaccessible compared to a single `primary`. */
-  --mana-white: #cbb26a;
-  --mana-blue: #1c6fb0;
-  --mana-black: #4d4358;
-  --mana-red: #b3392c;
-  --mana-green: #256d45;
+     inconsistent/inaccessible compared to a single `primary`. Kept exactly
+     as-is per DESIGN.md's "Application Note: Mana Color Identity". */
+  --mana-white: #d8c68c;
+  --mana-blue: #5aa8e0;
+  --mana-black: #b4a6c2;
+  --mana-red: #e07a6b;
+  --mana-green: #4bb37a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
+  --color-surface: var(--surface);
   --color-border: var(--border);
   --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-primary-foreground: var(--primary-foreground);
   --color-danger: var(--danger);
-  --color-surface: var(--surface);
   --color-mana-white: var(--mana-white);
   --color-mana-blue: var(--mana-blue);
   --color-mana-black: var(--mana-black);
   --color-mana-red: var(--mana-red);
   --color-mana-green: var(--mana-green);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-display: var(--font-cinzel);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #17140f;
-    --foreground: #f1ece2;
-
-    --primary: #5aa8e0;
-    --primary-foreground: #0c1a24;
-
-    --border: #34302a;
-    --muted: #a89f92;
-    --danger: #e07a6b;
-    --surface: #211d17;
-
-    --mana-white: #d8c68c;
-    --mana-blue: #5aa8e0;
-    --mana-black: #b4a6c2;
-    --mana-red: #e07a6b;
-    --mana-green: #4bb37a;
-  }
+  --font-sans: var(--font-open-sans);
+  --font-display: var(--font-oswald);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  word-spacing: 1px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display), Arial, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
+  }
+}
+
+@layer components {
+  /* article-card: flat surface panel, no border/shadow at rest - depth comes
+     from the red drop-shadow glow filter on interactive elements, not from
+     elevation (see DESIGN.md "Elevation & Depth"). */
+  .card {
+    @apply rounded-xl bg-surface p-6;
+  }
+
+  /* text-input: hairline border by default, 2px primary border on focus
+     (the focus signal is the border weight increasing, not a halo/ring). */
+  .input {
+    @apply w-full rounded border border-border bg-surface px-4 py-3 text-base text-foreground
+      focus:border-2 focus:border-primary focus:outline-none;
+  }
+
+  /* Native file inputs render their own "Choose File" button, which doesn't
+     take the .input focus-border treatment well (it draws a heavy outline
+     around the whole control). Style the button portion directly instead
+     and drop the focus ring on the wrapper. */
+  .input[type="file"] {
+    @apply cursor-pointer py-2 focus:border-border;
+  }
+  .input[type="file"]::file-selector-button {
+    @apply mr-4 cursor-pointer rounded-full border-0 bg-primary px-4 py-2 text-sm font-bold uppercase
+      text-primary-foreground transition-[filter];
+  }
+  .input[type="file"]::file-selector-button:hover {
+    filter: drop-shadow(0 0 6px var(--primary));
+  }
+
+  /* tag-badge: neutral uppercase label, used for card-type tags - kept
+     colorless per DESIGN.md's Do/Don't ("reserve brand-red as the only
+     general accent"; card types don't get their own rainbow palette). */
+  .tag-badge {
+    @apply rounded-full bg-white/10 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-foreground;
   }
 }

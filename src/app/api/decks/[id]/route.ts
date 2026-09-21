@@ -39,3 +39,40 @@ export async function GET(
 
   return NextResponse.json(deck);
 }
+
+/**
+ * DELETE /api/decks/[id] - session-scoped. Deletes the deck and its
+ * DeckCards (DeckCard.deckId is ON DELETE RESTRICT, so the cards must be
+ * removed first). 404 if the deck doesn't exist, 403 if it belongs to a
+ * different user.
+ */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  const deck = await prisma.deck.findUnique({ where: { id } });
+
+  if (!deck) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (deck.userId !== userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  await prisma.$transaction([
+    prisma.deckCard.deleteMany({ where: { deckId: id } }),
+    prisma.deck.delete({ where: { id } }),
+  ]);
+
+  return new NextResponse(null, { status: 204 });
+}

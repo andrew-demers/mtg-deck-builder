@@ -57,6 +57,10 @@ function mockCompletion(text: string) {
   getLlmProviderMock.mockReturnValue({ complete: vi.fn().mockResolvedValue(text) });
 }
 
+function mockSuggestion(name: string, tag = "Synergy", reason = "Fits the deck's plan.") {
+  mockCompletion(`${name} :: ${tag} :: ${reason}`);
+}
+
 function mockDeck(deckCards: Record<string, unknown>[]) {
   deckFindUniqueMock.mockResolvedValue({
     id: "deck_1",
@@ -103,7 +107,7 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockResolvedValue([
       { cardId: offColor.id, card: offColor, quantity: 1 },
     ]);
-    mockCompletion(offColor.name as string);
+    mockSuggestion(offColor.name as string);
 
     const result = await suggestCards("deck_1");
 
@@ -116,7 +120,7 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockResolvedValue([
       { cardId: usedUp.id, card: usedUp, quantity: 1 },
     ]);
-    mockCompletion(usedUp.name as string);
+    mockSuggestion(usedUp.name as string);
 
     const result = await suggestCards("deck_1");
 
@@ -129,11 +133,13 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockResolvedValue([
       { cardId: validCard.id, card: validCard, quantity: 1 },
     ]);
-    mockCompletion(validCard.name as string);
+    mockSuggestion(validCard.name as string, "Ramp", "Helps ramp into the commander's high cost.");
 
     const result = await suggestCards("deck_1");
 
-    expect(result).toEqual([validCard]);
+    expect(result).toEqual([
+      { card: validCard, tag: "Ramp", reason: "Helps ramp into the commander's high cost." },
+    ]);
   });
 
   it("sums quantity across multiple CollectionEntry rows for the same card (e.g. foil + non-foil)", async () => {
@@ -147,11 +153,13 @@ describe("suggestCards", () => {
       { cardId: partiallyUsed.id, card: partiallyUsed, quantity: 1 },
       { cardId: partiallyUsed.id, card: partiallyUsed, quantity: 1 },
     ]);
-    mockCompletion(partiallyUsed.name as string);
+    mockSuggestion(partiallyUsed.name as string);
 
     const result = await suggestCards("deck_1");
 
-    expect(result).toEqual([partiallyUsed]);
+    expect(result).toEqual([
+      { card: partiallyUsed, tag: "Synergy", reason: "Fits the deck's plan." },
+    ]);
   });
 
   it("accepts a suggestion within a partner commander's color identity that the active commander alone wouldn't allow", async () => {
@@ -183,11 +191,13 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockResolvedValue([
       { cardId: blueCard.id, card: blueCard, quantity: 1 },
     ]);
-    mockCompletion(blueCard.name as string);
+    mockSuggestion(blueCard.name as string);
 
     const result = await suggestCards("deck_1");
 
-    expect(result).toEqual([blueCard]);
+    expect(result).toEqual([
+      { card: blueCard, tag: "Synergy", reason: "Fits the deck's plan." },
+    ]);
   });
 
   it("returns an empty list without calling the LLM when there is no remaining-owned pool", async () => {

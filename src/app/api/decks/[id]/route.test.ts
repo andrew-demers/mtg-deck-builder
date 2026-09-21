@@ -8,16 +8,24 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     deck: {
       findUnique: vi.fn(),
+      delete: vi.fn(),
     },
+    deckCard: {
+      deleteMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }));
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { GET } from "@/app/api/decks/[id]/route";
+import { DELETE, GET } from "@/app/api/decks/[id]/route";
 
 const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const findUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
+const deckDeleteMock = prisma.deck.delete as unknown as ReturnType<typeof vi.fn>;
+const deckCardDeleteManyMock = prisma.deckCard.deleteMany as unknown as ReturnType<typeof vi.fn>;
+const transactionMock = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
 
 function buildRequest(): Request {
   return new Request("http://localhost/api/decks/deck_1");
@@ -100,5 +108,58 @@ describe("GET /api/decks/[id]", () => {
         cards: { include: { card: true } },
       },
     });
+  });
+});
+
+describe("DELETE /api/decks/[id]", () => {
+  beforeEach(() => {
+    authMock.mockReset();
+    findUniqueMock.mockReset();
+    deckDeleteMock.mockReset();
+    deckCardDeleteManyMock.mockReset();
+    transactionMock.mockReset();
+  });
+
+  it("returns 401 when there is no session", async () => {
+    authMock.mockResolvedValue(null);
+
+    const response = await DELETE(buildRequest(), buildParams("deck_1"));
+
+    expect(response.status).toBe(401);
+    expect(findUniqueMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the deck does not exist", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue(null);
+
+    const response = await DELETE(buildRequest(), buildParams("missing"));
+
+    expect(response.status).toBe(404);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the deck belongs to a different user", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "someone_else" });
+
+    const response = await DELETE(buildRequest(), buildParams("deck_1"));
+
+    expect(response.status).toBe(403);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes the deck's DeckCards and the deck in a transaction", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
+    transactionMock.mockResolvedValue(undefined);
+
+    const response = await DELETE(buildRequest(), buildParams("deck_1"));
+
+    expect(response.status).toBe(204);
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(transactionMock.mock.calls[0][0]).toHaveLength(2);
+    expect(deckCardDeleteManyMock).toHaveBeenCalledWith({ where: { deckId: "deck_1" } });
+    expect(deckDeleteMock).toHaveBeenCalledWith({ where: { id: "deck_1" } });
   });
 });

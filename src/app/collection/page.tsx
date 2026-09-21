@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import ManaCost from "@/components/mana-cost";
+import CardStats from "@/components/card-stats";
+import CardName from "@/components/card-name";
 
 interface CardData {
   id: string;
@@ -9,7 +11,10 @@ interface CardData {
   manaCost: string | null;
   manaValue: number;
   type: string;
+  types: string[];
+  colors: string[];
   isCommanderEligible: boolean;
+  oracleText: string | null;
 }
 
 interface CollectionEntryData {
@@ -112,9 +117,9 @@ export default function CollectionPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
-      <h1 className="font-display text-2xl tracking-wide">Collection</h1>
+      <h1 className="font-display text-3xl tracking-wide">Collection</h1>
 
-      <div className="flex flex-col gap-4 rounded-lg border p-4 shadow-sm">
+      <div className="card flex flex-col gap-4">
         <div className="flex flex-wrap gap-4">
           <label className="flex flex-col gap-1">
             <span className="text-sm font-medium">Min mana value</span>
@@ -123,7 +128,7 @@ export default function CollectionPage() {
               min={0}
               value={minManaValue}
               onChange={(event) => setMinManaValue(event.target.value)}
-              className="w-28 rounded border px-3 py-2"
+              className="input w-28"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -133,7 +138,7 @@ export default function CollectionPage() {
               min={0}
               value={maxManaValue}
               onChange={(event) => setMaxManaValue(event.target.value)}
-              className="w-28 rounded border px-3 py-2"
+              className="input w-28"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -142,7 +147,7 @@ export default function CollectionPage() {
               type="text"
               value={type}
               onChange={(event) => setType(event.target.value)}
-              className="rounded border px-3 py-2"
+              className="input"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -150,7 +155,7 @@ export default function CollectionPage() {
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as SortKey)}
-              className="rounded border px-3 py-2"
+              className="input"
             >
               <option value="name">Name</option>
               <option value="manaValue">Mana value</option>
@@ -184,6 +189,8 @@ export default function CollectionPage() {
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
+      {!isLoading && entries.length > 0 ? <CardStats entries={entries} /> : null}
+
       {isLoading ? (
         <p className="text-sm text-muted">Loading...</p>
       ) : entries.length === 0 ? (
@@ -191,7 +198,7 @@ export default function CollectionPage() {
       ) : (
         <table className="w-full border-collapse text-left text-sm">
           <thead>
-            <tr className="border-b">
+            <tr className="border-b border-border">
               <th className="py-2 pr-4 font-medium">Name</th>
               <th className="py-2 pr-4 font-medium">Mana cost</th>
               <th className="py-2 pr-4 font-medium">Type</th>
@@ -201,8 +208,10 @@ export default function CollectionPage() {
           </thead>
           <tbody>
             {entries.map((entry) => (
-              <tr key={entry.id} className="border-b">
-                <td className="py-2 pr-4">{entry.card.name}</td>
+              <tr key={entry.id} className="border-b border-border">
+                <td className="py-2 pr-4">
+                  <CardName name={entry.card.name} oracleText={entry.card.oracleText} />
+                </td>
                 <td className="py-2 pr-4">
                   {entry.card.manaCost ? <ManaCost value={entry.card.manaCost} /> : "-"}
                 </td>
