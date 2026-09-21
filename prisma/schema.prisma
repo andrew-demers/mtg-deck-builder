@@ -82,6 +82,7 @@ model Deck {
   commanderCardId String?
   commanderCard   Card?      @relation(fields: [commanderCardId], references: [id])
   critique        String?
+  description     String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   cards           DeckCard[]
