@@ -7,6 +7,7 @@ import ManaCost from "@/components/mana-cost";
 import ColorIdentityPips from "@/components/color-identity";
 import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
+import Markdown from "@/components/markdown";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
@@ -42,6 +43,7 @@ interface DeckData {
   commanderCard: CardData | null;
   cards: DeckCardData[];
   critique: string | null;
+  description: string | null;
 }
 
 interface SuggestedCard {
@@ -69,6 +71,7 @@ export default function DeckPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isCritiquing, setIsCritiquing] = useState(false);
+  const [isDescribing, setIsDescribing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
@@ -232,6 +235,28 @@ export default function DeckPage() {
       setError("Something went wrong getting a critique for this deck.");
     } finally {
       setIsCritiquing(false);
+    }
+  }
+
+  async function handleGetDescription() {
+    setError(null);
+    setIsDescribing(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/description`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong getting a description for this deck.");
+        return;
+      }
+
+      const data = (await response.json()) as DeckData;
+      setDeck(data);
+    } catch {
+      setError("Something went wrong getting a description for this deck.");
+    } finally {
+      setIsDescribing(false);
     }
   }
 
@@ -614,6 +639,24 @@ export default function DeckPage() {
 
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-muted">Deck description</p>
+              <Button
+                onClick={handleGetDescription}
+                disabled={isDescribing}
+                className="self-start px-5 py-2 text-sm"
+              >
+                {isDescribing
+                  ? "Getting description..."
+                  : deck.description
+                    ? "Re-request description"
+                    : "Get description"}
+              </Button>
+            </div>
+            {deck.description ? <Markdown>{deck.description}</Markdown> : null}
+          </div>
+
+          <div className="card flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Deck critique</p>
               <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-5 py-2 text-sm">
                 {isCritiquing
@@ -623,9 +666,7 @@ export default function DeckPage() {
                     : "Get critique"}
               </Button>
             </div>
-            {deck.critique ? (
-              <p className="whitespace-pre-wrap text-sm text-muted">{deck.critique}</p>
-            ) : null}
+            {deck.critique ? <Markdown>{deck.critique}</Markdown> : null}
           </div>
 
           <div className="card flex flex-col gap-3">
