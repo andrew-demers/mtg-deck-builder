@@ -31,7 +31,7 @@ export default function CardName({ name, oracleText }: CardNameProps) {
       {isOpen ? (
         <span
           role="tooltip"
-          className="absolute left-0 top-full z-10 mt-1 w-64 whitespace-pre-wrap rounded border border-border bg-surface p-3 text-xs font-normal text-muted"
+          className="absolute left-0 top-full z-10 mt-2 w-64 whitespace-pre-wrap rounded border border-border bg-surface p-3 text-xs font-normal text-muted shadow-lg"
         >
           {oracleText}
         </span>
