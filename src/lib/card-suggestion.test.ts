@@ -8,6 +8,9 @@ vi.mock("@/lib/prisma", () => ({
     collectionEntry: {
       findMany: vi.fn(),
     },
+    card: {
+      findMany: vi.fn(),
+    },
   },
 }));
 
@@ -23,6 +26,7 @@ const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeo
 const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<
   typeof vi.fn
 >;
+const cardFindManyMock = prisma.card.findMany as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
 
 function card(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -76,6 +80,7 @@ describe("suggestCards", () => {
   beforeEach(() => {
     deckFindUniqueMock.mockReset();
     collectionFindManyMock.mockReset();
+    cardFindManyMock.mockReset();
     getLlmProviderMock.mockReset();
   });
 
@@ -205,6 +210,57 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockResolvedValue([]);
 
     const result = await suggestCards("deck_1");
+
+    expect(result).toEqual([]);
+    expect(getLlmProviderMock).not.toHaveBeenCalled();
+  });
+
+  it("does not query the catalog when allowUnowned is false", async () => {
+    mockDeck([]);
+    const validCard = card({ id: "valid_card", name: "Valid Card", colorIdentity: ["W"] });
+    collectionFindManyMock.mockResolvedValue([
+      { cardId: validCard.id, card: validCard, quantity: 1 },
+    ]);
+    mockSuggestion(validCard.name as string);
+
+    await suggestCards("deck_1");
+
+    expect(cardFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts an unowned catalog suggestion when allowUnowned is true", async () => {
+    mockDeck([]);
+    const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
+    collectionFindManyMock.mockResolvedValue([]);
+    cardFindManyMock.mockResolvedValue([unowned]);
+    mockSuggestion(unowned.name as string, "Synergy", "Great with the commander's plan.");
+
+    const result = await suggestCards("deck_1", { allowUnowned: true });
+
+    expect(cardFindManyMock).toHaveBeenCalled();
+    expect(result).toEqual([
+      { card: unowned, tag: "Synergy", reason: "Great with the commander's plan." },
+    ]);
+  });
+
+  it("excludes the commander and already-used cards from the catalog pool when allowUnowned is true", async () => {
+    const usedUp = card({ id: "used_up", name: "Used Up Card", colorIdentity: ["W"] });
+    mockDeck([{ cardId: usedUp.id, quantity: 1, isCommander: false }]);
+    collectionFindManyMock.mockResolvedValue([]);
+    cardFindManyMock.mockResolvedValue([]);
+
+    await suggestCards("deck_1", { allowUnowned: true });
+
+    const excludeIds = cardFindManyMock.mock.calls[0][0].where.id.notIn;
+    expect(excludeIds).toEqual(expect.arrayContaining([commander.id, usedUp.id]));
+  });
+
+  it("returns an empty list without calling the LLM when both pools are empty, even with allowUnowned", async () => {
+    mockDeck([]);
+    collectionFindManyMock.mockResolvedValue([]);
+    cardFindManyMock.mockResolvedValue([]);
+
+    const result = await suggestCards("deck_1", { allowUnowned: true });
 
     expect(result).toEqual([]);
     expect(getLlmProviderMock).not.toHaveBeenCalled();

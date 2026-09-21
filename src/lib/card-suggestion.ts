@@ -11,23 +11,41 @@ export interface SuggestedCard {
   reason: string;
 }
 
+export interface SuggestCardsOptions {
+  /**
+   * When true, the LLM's pool is widened from the user's remaining owned
+   * cards to also include every catalog card within the commander's color
+   * identity that isn't already in the deck, so it may suggest strong cards
+   * the user doesn't yet own (surfaced to the user as "not owned"
+   * elsewhere). Defaults to false - owned cards only.
+   */
+  allowUnowned?: boolean;
+}
+
 /**
  * Asks the LLM to suggest additions to an existing deck from the user's
  * *remaining* owned cards - cards in `CollectionEntry` whose owned quantity
- * exceeds how many copies are already in this deck's `DeckCard` set. Cards
- * with zero remaining availability (fully used already) are excluded from
- * the pool offered to the LLM, so they can never be suggested.
+ * exceeds how many copies are already in this deck's `DeckCard` set - and,
+ * when `allowUnowned` is set, also from the full card catalog within the
+ * commander's color identity. Cards with zero remaining availability (fully
+ * used already) are excluded from the owned pool, and cards already in the
+ * deck are excluded from the catalog pool, so neither can be suggested
+ * again.
  *
  * The LLM's suggestions are never trusted directly: each returned name is
- * matched case-insensitively against the remaining-owned pool, and every
- * match is re-checked against the commander's color identity before being
- * accepted. Anything hallucinated (not owned, or already fully used),
- * off-color, or duplicated across suggestions is dropped silently. The tag
- * and reason accompanying an accepted name are trusted as-is (unlike the
- * card name, there's no ground truth to validate free-text explanations
- * against).
+ * matched case-insensitively against the offered pool, and every match is
+ * re-checked against the commander's color identity before being accepted.
+ * Anything hallucinated, off-color, or duplicated across suggestions is
+ * dropped silently. The tag and reason accompanying an accepted name are
+ * trusted as-is (unlike the card name, there's no ground truth to validate
+ * free-text explanations against).
  */
-export async function suggestCards(deckId: string): Promise<SuggestedCard[]> {
+export async function suggestCards(
+  deckId: string,
+  options: SuggestCardsOptions = {},
+): Promise<SuggestedCard[]> {
+  const allowUnowned = options.allowUnowned ?? false;
+
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
     include: { commanderCard: true, cards: { include: { card: true } } },
@@ -81,14 +99,22 @@ export async function suggestCards(deckId: string): Promise<SuggestedCard[]> {
     }
   }
 
-  if (remainingPool.length === 0) {
+  const excludeIds = [...commanders.map((c) => c.id), ...Array.from(usedByCardId.keys())];
+  const pool = allowUnowned
+    ? dedupeById([
+        ...remainingPool,
+        ...(await findCatalogCardsInColorIdentity(unionColorIdentity(commanders), excludeIds)),
+      ])
+    : remainingPool;
+
+  if (pool.length === 0) {
     return [];
   }
 
-  const completion = await getLlmProvider().complete(buildPrompt(commanders, remainingPool));
+  const completion = await getLlmProvider().complete(buildPrompt(commanders, pool, allowUnowned));
   const suggestions = parseSuggestions(completion);
 
-  const cardsByName = new Map(remainingPool.map((card) => [normalize(card.name), card]));
+  const cardsByName = new Map(pool.map((card) => [normalize(card.name), card]));
 
   const matched = new Map<string, SuggestedCard>();
   for (const { name, tag, reason } of suggestions) {
@@ -111,6 +137,35 @@ function normalize(name: string): string {
   return name.trim().toLowerCase();
 }
 
+function dedupeById(cards: Card[]): Card[] {
+  const byId = new Map<string, Card>();
+  for (const card of cards) {
+    byId.set(card.id, card);
+  }
+  return Array.from(byId.values());
+}
+
+/**
+ * Cards outside the commander's color identity can never legally join the
+ * deck, so they're excluded at the database level (via the identity's
+ * disallowed colors) rather than fetching the whole catalog and filtering
+ * in memory.
+ */
+async function findCatalogCardsInColorIdentity(
+  colorIdentity: string[],
+  excludeIds: string[],
+): Promise<Card[]> {
+  const allColors = ["W", "U", "B", "R", "G"];
+  const disallowed = allColors.filter((color) => !colorIdentity.includes(color));
+
+  return prisma.card.findMany({
+    where: {
+      id: { notIn: excludeIds },
+      ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
+    },
+  });
+}
+
 function parseSuggestions(completion: string): { name: string; tag: string; reason: string }[] {
   return completion
     .split("\n")
@@ -123,21 +178,24 @@ function parseSuggestions(completion: string): { name: string; tag: string; reas
     .filter((suggestion): suggestion is { name: string; tag: string; reason: string } => suggestion !== null);
 }
 
-function buildPrompt(commanders: Card[], remainingPool: Card[]): string {
-  const names = remainingPool.map((card) => `- ${card.name}`).join("\n");
+function buildPrompt(commanders: Card[], pool: Card[], allowUnowned: boolean): string {
+  const names = pool.map((card) => `- ${card.name}`).join("\n");
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const colorIdentity = unionColorIdentity(commanders);
+  const poolDescription = allowUnowned
+    ? "the following list of cards, some of which the player owns but has not yet fully used in this deck, and some of which they don't own"
+    : "the following list of cards the player owns but has not yet fully used in this deck";
 
   return [
     "You are suggesting additions to an existing Magic: The Gathering Commander/EDH deck.",
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
-    "Suggest cards to add to this deck from the following list of cards the player owns but has not yet fully used in this deck.",
+    `Suggest cards to add to this deck from ${poolDescription}.`,
     "Every suggestion must be within the commander's color identity.",
     "Respond with one suggestion per line in exactly this format and nothing else:",
     "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",
     "",
-    "Available cards:",
+    `${allowUnowned ? "Available" : "Owned"} cards:`,
     names,
   ].join("\n");
 }

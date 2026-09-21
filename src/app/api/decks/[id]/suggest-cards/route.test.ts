@@ -26,8 +26,13 @@ const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const suggestCardsMock = suggestCards as unknown as ReturnType<typeof vi.fn>;
 
-function buildRequest(): Request {
-  return new Request("http://localhost/api/decks/deck_1/suggest-cards", { method: "POST" });
+function buildRequest(body?: unknown): Request {
+  return new Request("http://localhost/api/decks/deck_1/suggest-cards", {
+    method: "POST",
+    ...(body !== undefined
+      ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : {}),
+  });
 }
 
 function buildParams(id: string): { params: Promise<{ id: string }> } {
@@ -89,7 +94,17 @@ describe("POST /api/decks/[id]/suggest-cards", () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual([suggestedCard]);
-    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1");
+    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: false });
+  });
+
+  it("passes allowUnowned through to suggestCards when set", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
+    suggestCardsMock.mockResolvedValue([suggestedCard]);
+
+    await POST(buildRequest({ allowUnowned: true }), buildParams("deck_1"));
+
+    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: true });
   });
 
   it("returns 400 when suggestCards throws a CardSuggestionError", async () => {

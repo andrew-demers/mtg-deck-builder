@@ -260,12 +260,16 @@ export default function DeckPage() {
     }
   }
 
-  async function handleGetSuggestions() {
+  async function handleGetSuggestions(allowUnowned: boolean) {
     setError(null);
     setIsSuggesting(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/suggest-cards`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/suggest-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowUnowned }),
+      });
 
       if (!response.ok) {
         const data = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -672,9 +676,23 @@ export default function DeckPage() {
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Card suggestions</p>
-              <Button onClick={handleGetSuggestions} disabled={isSuggesting} className="self-start px-5 py-2 text-sm">
-                {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => handleGetSuggestions(false)}
+                  disabled={isSuggesting}
+                  className="self-start px-5 py-2 text-sm"
+                >
+                  {isSuggesting ? "Getting suggestions..." : "Use cards I own"}
+                </Button>
+                <Button
+                  onClick={() => handleGetSuggestions(true)}
+                  disabled={isSuggesting}
+                  className="self-start px-5 py-2 text-sm"
+                >
+                  {isSuggesting ? "Getting suggestions..." : "Include cards I don't own"}
+                </Button>
+              </div>
             </div>
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
@@ -685,6 +703,11 @@ export default function DeckPage() {
                         {tag}
                       </span>
                       <CardName name={card.name} oracleText={card.oracleText} />
+                      {collectionCards && !ownedCardIds.has(card.id) ? (
+                        <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
+                          Not owned
+                        </span>
+                      ) : null}
                       {otherDeckCardIds.has(card.id) ? (
                         <span className="tag-badge ml-2">In another deck</span>
                       ) : null}
