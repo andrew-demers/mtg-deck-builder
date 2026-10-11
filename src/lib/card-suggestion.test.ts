@@ -11,7 +11,14 @@ vi.mock("@/lib/prisma", () => ({
     card: {
       findMany: vi.fn(),
     },
+    deckCard: {
+      findMany: vi.fn(),
+    },
   },
+}));
+
+vi.mock("@/lib/budget-candidates", () => ({
+  findBudgetCandidates: vi.fn(),
 }));
 
 vi.mock("@/lib/llm", () => ({
@@ -20,6 +27,7 @@ vi.mock("@/lib/llm", () => ({
 
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -352,15 +360,30 @@ describe("suggestCards", () => {
       await expect(suggestCards("deck_1", { budgetUsd: 0 })).rejects.toThrow(CardSuggestionError);
     });
 
-    it("picks the best combination of unowned cards that fits and keeps owned cards free", async () => {
+    const candidatesMock = findBudgetCandidates as unknown as ReturnType<typeof vi.fn>;
+    const deckCardFindManyMock = prisma.deckCard.findMany as unknown as ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      candidatesMock.mockReset();
+      candidatesMock.mockResolvedValue([]);
+      deckCardFindManyMock.mockReset();
+      deckCardFindManyMock.mockResolvedValue([]);
+    });
+
+    function priced(id: string, name: string, priceUsd: number) {
+      return card({ id, name, colorIdentity: ["W"], priceUsd });
+    }
+
+    it("ranks Scryfall candidates with the owned cards, then picks the best combination that fits", async () => {
       mockDeck([]);
       const owned = card({ id: "owned", name: "Owned Card", colorIdentity: ["W"] });
-      const big = card({ id: "big", name: "Big Card", colorIdentity: ["W"], priceUsd: 15 });
-      const b = card({ id: "b", name: "Cheap B", colorIdentity: ["W"], priceUsd: 10 });
-      const c = card({ id: "c", name: "Cheap C", colorIdentity: ["W"], priceUsd: 10 });
-      const d = card({ id: "d", name: "Cheap D", colorIdentity: ["W"], priceUsd: 10 });
       collectionFindManyMock.mockResolvedValue([{ cardId: owned.id, card: owned, quantity: 1 }]);
-      cardFindManyMock.mockResolvedValue([big, b, c, d]);
+      candidatesMock.mockResolvedValue([
+        priced("big", "Big Card", 15),
+        priced("b", "Cheap B", 10),
+        priced("c", "Cheap C", 10),
+        priced("d", "Cheap D", 10),
+      ]);
       mockCompletion(
         ["Owned Card", "Big Card", "Cheap B", "Cheap C", "Cheap D"]
           .map((name) => `${name} :: Synergy :: Fits.`)
@@ -369,10 +392,35 @@ describe("suggestCards", () => {
 
       const result = await suggestCards("deck_1", { budgetUsd: 20 });
 
+      expect(candidatesMock).toHaveBeenCalledWith(expect.objectContaining({ budgetUsd: 20 }));
       expect(result.map((s) => s.card.name)).toEqual(["Owned Card", "Cheap B", "Cheap C"]);
-      expect(cardFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ priceUsd: { lte: 20 } }) }),
+      expect(result[1].card.priceUsd).toBe(10);
+    });
+
+    it("leaves owned cards that are in another deck out of the pool and the search", async () => {
+      mockDeck([]);
+      const elsewhere = card({ id: "elsewhere", name: "Elsewhere", colorIdentity: ["W"] });
+      collectionFindManyMock.mockResolvedValue([
+        { cardId: elsewhere.id, card: elsewhere, quantity: 1 },
+      ]);
+      deckCardFindManyMock.mockResolvedValue([{ cardId: "elsewhere" }]);
+      mockSuggestion("Elsewhere");
+
+      const result = await suggestCards("deck_1", { budgetUsd: 20 });
+
+      expect(result).toEqual([]);
+      expect(candidatesMock).toHaveBeenCalledWith(
+        expect.objectContaining({ excludeIds: expect.arrayContaining(["elsewhere"]) }),
       );
+    });
+
+    it("errors rather than ignoring the budget when Scryfall can't be searched", async () => {
+      mockDeck([]);
+      collectionFindManyMock.mockResolvedValue([]);
+      candidatesMock.mockRejectedValue(new Error("403"));
+      mockSuggestion("Card X");
+
+      await expect(suggestCards("deck_1", { budgetUsd: 20 })).rejects.toThrow(CardSuggestionError);
     });
   });
 });

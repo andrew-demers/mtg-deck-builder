@@ -1037,7 +1037,7 @@ export default function DeckPage() {
                       <CardName name={card.name} oracleText={card.oracleText} />
                       {collectionCards && !ownedCardIds.has(card.id) ? (
                         <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                          Not owned - {formatUsd(card.priceUsd)}
+                          Not owned
                         </span>
                       ) : null}
                       {otherDeckCardIds.has(card.id) ? (
@@ -1054,6 +1054,7 @@ export default function DeckPage() {
                         )}{" "}
                         - {card.type}
                       </span>
+                      <span className="ml-2 font-medium">{formatUsd(card.priceUsd)}</span>
                       <span className="block text-xs text-muted">{reason}</span>
                     </span>
                     <Button

@@ -7,6 +7,7 @@ import {
   validateColorIdentity,
 } from "@/lib/commander-legality";
 import { selectWithinBudget } from "@/lib/budget-selection";
+import { findBudgetCandidates } from "@/lib/budget-candidates";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -112,6 +113,20 @@ export async function suggestCards(
 
   const colorIdentity = unionColorIdentity(commanders);
 
+  // In budget mode the player wants cards to buy, so owned cards already
+  // committed to another deck don't count as free options.
+  const otherDeckCardIds =
+    budgetUsd === undefined
+      ? new Set<string>()
+      : new Set(
+          (
+            await prisma.deckCard.findMany({
+              where: { deckId: { not: deckId }, deck: { userId: deck.userId } },
+              select: { cardId: true },
+            })
+          ).map((deckCard) => deckCard.cardId),
+        );
+
   const remainingPool: Card[] = [];
   for (const [cardId, { card, quantity }] of ownedByCardId) {
     const used = usedByCardId.get(cardId) ?? 0;
@@ -124,18 +139,45 @@ export async function suggestCards(
     // instructions) keeps a mostly off-color collection from crowding out
     // legal candidates in the prompt and burning suggestion slots on cards
     // that would just get rejected by validateColorIdentity below anyway.
-    if (hasRemainingCopies && validateColorIdentity(colorIdentity, [card])) {
+    const inOtherDeck = otherDeckCardIds.has(cardId) && !isBasicLand(card);
+    if (hasRemainingCopies && !inOtherDeck && validateColorIdentity(colorIdentity, [card])) {
       remainingPool.push(card);
     }
   }
 
-  const excludeIds = [...commanders.map((c) => c.id), ...Array.from(usedByCardId.keys())];
-  const pool = allowUnowned
-    ? dedupeById([
-        ...remainingPool,
-        ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds, budgetUsd)),
-      ])
-    : remainingPool;
+  const excludeIds = [
+    ...commanders.map((c) => c.id),
+    ...Array.from(usedByCardId.keys()),
+    // Owned cards are either already in the pool above or deliberately left
+    // out of it (in another deck), so the catalog must not re-add them as
+    // cards to buy.
+    ...(budgetUsd !== undefined ? Array.from(ownedByCardId.keys()) : []),
+  ];
+  let pool: Card[];
+  if (budgetUsd !== undefined) {
+    // Budget mode searches Scryfall for affordable, role- and
+    // synergy-matched cards (already priced) instead of offering the
+    // whole local catalog to the LLM.
+    let candidates: Card[];
+    try {
+      candidates = await findBudgetCandidates({
+        commanders,
+        colorIdentity,
+        budgetUsd,
+        excludeIds,
+        complete: (prompt) => getLlmProvider().complete(prompt),
+      });
+    } catch {
+      throw new CardSuggestionError(
+        "Couldn't search Scryfall for cards within your budget. Try again shortly.",
+      );
+    }
+    pool = dedupeById([...remainingPool, ...candidates]);
+  } else {
+    pool = allowUnowned
+      ? dedupeById([...remainingPool, ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds))])
+      : remainingPool;
+  }
 
   if (pool.length === 0) {
     return [];
@@ -215,7 +257,6 @@ function dedupeById(cards: Card[]): Card[] {
 async function findCatalogCardsInColorIdentity(
   colorIdentity: string[],
   excludeIds: string[],
-  maxPriceUsd?: number,
 ): Promise<Card[]> {
   const allColors = ["W", "U", "B", "R", "G"];
   const disallowed = allColors.filter((color) => !colorIdentity.includes(color));
@@ -223,8 +264,6 @@ async function findCatalogCardsInColorIdentity(
   return prisma.card.findMany({
     where: {
       id: { notIn: excludeIds },
-      // A price filter also drops cards with no known price.
-      ...(maxPriceUsd !== undefined ? { priceUsd: { lte: maxPriceUsd } } : {}),
       ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
     },
   });
@@ -255,7 +294,12 @@ function buildPrompt(
       if (budgetUsd === undefined) {
         return `- ${card.name}`;
       }
-      return `- ${card.name} (${ownedIds.has(card.id) ? "owned" : `$${(card.priceUsd ?? 0).toFixed(2)}`})`;
+      const cost = ownedIds.has(card.id)
+        ? " (owned)"
+        : card.priceUsd !== null
+          ? ` ($${card.priceUsd.toFixed(2)})`
+          : "";
+      return `- ${card.name}${cost}`;
     })
     .join("\n");
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
@@ -273,6 +317,7 @@ function buildPrompt(
     ...(budgetUsd !== undefined
       ? [
           `The player has $${budgetUsd.toFixed(2)} to spend in total on cards they don't own (owned cards are free).`,
+          "Prices are shown where known; otherwise use your knowledge of typical prices and avoid cards that would eat the whole budget.",
           "Rank the suggestions from best to worst for this deck, favoring strong cards that are cheap for what they do; the cheapest combination that fits will be chosen from your ranking.",
         ]
       : []),

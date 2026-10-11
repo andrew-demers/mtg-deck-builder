@@ -161,3 +161,24 @@ export async function fetchCardsByName(names: string[]): Promise<Map<string, Scr
 
   return results;
 }
+
+/**
+ * Runs a Scryfall search (`/cards/search`, ordered by EDHREC popularity) and
+ * returns the first `limit` cards of the first page, one printing per card.
+ * A query with no results is an empty list, not an error.
+ */
+export async function searchCards(query: string, limit = 30): Promise<ScryfallCardData[]> {
+  const response = await scryfallFetch(
+    `/cards/search?q=${encodeURIComponent(query)}&order=edhrec&unique=cards`,
+  );
+
+  if (response.status === 404) {
+    return [];
+  }
+  if (!response.ok) {
+    throw new Error(`Scryfall search failed: ${response.status} ${response.statusText}`);
+  }
+
+  const body = (await response.json()) as { data?: RawScryfallCard[] };
+  return (body.data ?? []).slice(0, limit).map(parseScryfallCard);
+}
