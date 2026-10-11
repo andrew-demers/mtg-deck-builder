@@ -6,6 +6,7 @@ import {
   unionColorIdentity,
   validateColorIdentity,
 } from "@/lib/commander-legality";
+import { selectWithinBudget } from "@/lib/budget-selection";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -25,6 +26,13 @@ export interface SuggestCardsOptions {
    * elsewhere). Defaults to false - owned cards only.
    */
   allowUnowned?: boolean;
+  /**
+   * Maximum total USD to spend on cards the user doesn't own. Owned cards
+   * are free. Implies `allowUnowned`; unowned cards with no known price are
+   * excluded since their cost can't be checked. The LLM ranks a wider
+   * candidate list and the best-value combination that fits is chosen.
+   */
+  budgetUsd?: number;
 }
 
 /**
@@ -51,7 +59,11 @@ export async function suggestCards(
   deckId: string,
   options: SuggestCardsOptions = {},
 ): Promise<SuggestedCard[]> {
-  const allowUnowned = options.allowUnowned ?? false;
+  const budgetUsd = options.budgetUsd;
+  if (budgetUsd !== undefined && !(Number.isFinite(budgetUsd) && budgetUsd > 0)) {
+    throw new CardSuggestionError("Budget must be a positive number");
+  }
+  const allowUnowned = (options.allowUnowned ?? false) || budgetUsd !== undefined;
 
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
@@ -121,7 +133,7 @@ export async function suggestCards(
   const pool = allowUnowned
     ? dedupeById([
         ...remainingPool,
-        ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds)),
+        ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds, budgetUsd)),
       ])
     : remainingPool;
 
@@ -137,8 +149,14 @@ export async function suggestCards(
   const neededToFillDeck = Math.max(REQUIRED_DECK_SIZE - deckSize, 0);
   const requestCount = Math.min(pool.length, neededToFillDeck || DEFAULT_SUGGESTION_COUNT);
 
+  // Under a budget the LLM ranks extra candidates so the knapsack has
+  // alternatives to trade between.
+  const candidateCount =
+    budgetUsd !== undefined ? Math.min(pool.length, requestCount * 2) : requestCount;
+  const ownedIds = new Set(remainingPool.map((card) => card.id));
+
   const completion = await getLlmProvider().complete(
-    buildPrompt(commanders, pool, allowUnowned, requestCount),
+    buildPrompt(commanders, pool, allowUnowned, candidateCount, budgetUsd, ownedIds),
   );
   const suggestions = parseSuggestions(completion);
 
@@ -158,7 +176,22 @@ export async function suggestCards(
     matched.set(card.id, { card, tag, reason });
   }
 
-  return Array.from(matched.values());
+  const ranked = Array.from(matched.values());
+  if (budgetUsd === undefined) {
+    return ranked;
+  }
+
+  const chosenIds = new Set(
+    selectWithinBudget(
+      ranked.map(({ card }) => ({
+        id: card.id,
+        costCents: ownedIds.has(card.id) ? 0 : Math.round((card.priceUsd ?? 0) * 100),
+      })),
+      Math.round(budgetUsd * 100),
+      requestCount,
+    ),
+  );
+  return ranked.filter(({ card }) => chosenIds.has(card.id));
 }
 
 function normalize(name: string): string {
@@ -182,6 +215,7 @@ function dedupeById(cards: Card[]): Card[] {
 async function findCatalogCardsInColorIdentity(
   colorIdentity: string[],
   excludeIds: string[],
+  maxPriceUsd?: number,
 ): Promise<Card[]> {
   const allColors = ["W", "U", "B", "R", "G"];
   const disallowed = allColors.filter((color) => !colorIdentity.includes(color));
@@ -189,6 +223,8 @@ async function findCatalogCardsInColorIdentity(
   return prisma.card.findMany({
     where: {
       id: { notIn: excludeIds },
+      // A price filter also drops cards with no known price.
+      ...(maxPriceUsd !== undefined ? { priceUsd: { lte: maxPriceUsd } } : {}),
       ...(disallowed.length > 0 ? { NOT: { colorIdentity: { hasSome: disallowed } } } : {}),
     },
   });
@@ -211,8 +247,17 @@ function buildPrompt(
   pool: Card[],
   allowUnowned: boolean,
   requestCount: number,
+  budgetUsd?: number,
+  ownedIds: Set<string> = new Set(),
 ): string {
-  const names = pool.map((card) => `- ${card.name}`).join("\n");
+  const names = pool
+    .map((card) => {
+      if (budgetUsd === undefined) {
+        return `- ${card.name}`;
+      }
+      return `- ${card.name} (${ownedIds.has(card.id) ? "owned" : `$${(card.priceUsd ?? 0).toFixed(2)}`})`;
+    })
+    .join("\n");
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const colorIdentity = unionColorIdentity(commanders);
   const poolDescription = allowUnowned
@@ -225,6 +270,12 @@ function buildPrompt(
     "",
     `Suggest exactly ${requestCount} card${requestCount === 1 ? "" : "s"} to add to this deck from ${poolDescription}.`,
     "Every suggestion must be within the commander's color identity.",
+    ...(budgetUsd !== undefined
+      ? [
+          `The player has $${budgetUsd.toFixed(2)} to spend in total on cards they don't own (owned cards are free).`,
+          "Rank the suggestions from best to worst for this deck, favoring strong cards that are cheap for what they do; the cheapest combination that fits will be chosen from your ranking.",
+        ]
+      : []),
     "Respond with one suggestion per line in exactly this format and nothing else:",
     "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",
     "",

@@ -10,6 +10,7 @@ import CardName from "@/components/card-name";
 import Markdown from "@/components/markdown";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
+import { isCommanderEligible } from "@/lib/commander-eligibility";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
@@ -84,6 +85,12 @@ export default function DeckPage() {
   const [error, setError] = useState<string | null>(null);
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
+  const [changingFromCardId, setChangingFromCardId] = useState<string | null>(null);
+  const [commanderQuery, setCommanderQuery] = useState("");
+  const [isChangingCommander, setIsChangingCommander] = useState(false);
+  const [isKeepingOwned, setIsKeepingOwned] = useState(false);
+  const [keepOwnedNotice, setKeepOwnedNotice] = useState<string | null>(null);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
@@ -254,6 +261,86 @@ export default function DeckPage() {
     }
   }
 
+  async function handleChangeCommander(fromCardId: string, toCardId: string, removeOffIdentity = false) {
+    setError(null);
+    setIsChangingCommander(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/change-commander`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromCardId, toCardId, removeOffIdentity }),
+      });
+
+      if (response.status === 409) {
+        const { conflicts } = (await response.json()) as { conflicts: string[] };
+        if (
+          window.confirm(
+            `This commander's colors don't allow ${conflicts.length} card${conflicts.length === 1 ? "" : "s"} in the deck: ${conflicts.join(", ")}. Remove them and change commander?`,
+          )
+        ) {
+          setIsChangingCommander(false);
+          await handleChangeCommander(fromCardId, toCardId, true);
+        }
+        return;
+      }
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong changing the commander.");
+        return;
+      }
+
+      setDeck((await response.json()) as DeckData);
+      setChangingFromCardId(null);
+      setCommanderQuery("");
+    } catch {
+      setError("Something went wrong changing the commander.");
+    } finally {
+      setIsChangingCommander(false);
+    }
+  }
+
+  async function handleKeepOwnedOnly() {
+    if (
+      !window.confirm(
+        "Remove every card you don't own, and every card already in another deck, from this deck? Commanders and basic lands are kept.",
+      )
+    ) {
+      return;
+    }
+
+    setError(null);
+    setKeepOwnedNotice(null);
+    setIsKeepingOwned(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/keep-owned`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong updating this deck.");
+        return;
+      }
+
+      const { removed } = (await response.json()) as { removed: { name: string }[] };
+      setKeepOwnedNotice(
+        removed.length === 0
+          ? "Every card in this deck is already owned and unused elsewhere."
+          : `Removed ${removed.length} card${removed.length === 1 ? "" : "s"}: ${removed.map((card) => card.name).join(", ")}`,
+      );
+
+      const deckResponse = await fetch(`/api/decks/${deckId}`);
+      if (deckResponse.ok) {
+        setDeck((await deckResponse.json()) as DeckData);
+      }
+    } catch {
+      setError("Something went wrong updating this deck.");
+    } finally {
+      setIsKeepingOwned(false);
+    }
+  }
+
   async function handleGetCritique() {
     setError(null);
     setIsCritiquing(true);
@@ -298,7 +385,7 @@ export default function DeckPage() {
     }
   }
 
-  async function handleGetSuggestions(allowUnowned: boolean) {
+  async function handleGetSuggestions(allowUnowned: boolean, budgetUsd?: number) {
     setError(null);
     setIsSuggesting(true);
 
@@ -306,7 +393,7 @@ export default function DeckPage() {
       const response = await fetch(`/api/decks/${deckId}/suggest-cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowUnowned }),
+        body: JSON.stringify({ allowUnowned, budgetUsd }),
       });
 
       if (!response.ok) {
@@ -605,6 +692,14 @@ export default function DeckPage() {
       (normalizedCollectionQuery === "" || card.name.toLowerCase().includes(normalizedCollectionQuery)),
   );
 
+  const normalizedCommanderQuery = commanderQuery.trim().toLowerCase();
+  const commanderCandidates = (collectionCards ?? []).filter(
+    (card) =>
+      isCommanderEligible(card) &&
+      !commanderDeckCards.some((deckCard) => deckCard.cardId === card.id) &&
+      (normalizedCommanderQuery === "" || card.name.toLowerCase().includes(normalizedCommanderQuery)),
+  );
+
   const deckPrice = computeDeckPrice(deck.cards);
 
   const normalizedSwapQuery = swapQuery.trim().toLowerCase();
@@ -665,7 +760,7 @@ export default function DeckPage() {
                   <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
                   {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                     <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                      Not owned
+                      Not owned - {formatUsd(deckCard.card.priceUsd)}
                     </span>
                   ) : null}
                   {otherDeckCardIds.has(deckCard.cardId) ? (
@@ -692,9 +787,53 @@ export default function DeckPage() {
                     {switchingCardId === deckCard.cardId ? "Switching..." : "Make active"}
                   </Button>
                 ) : null}
+                <Button
+                  variant="secondary"
+                  className="ml-2 mt-2 px-4 py-1 text-xs"
+                  onClick={() => {
+                    setChangingFromCardId(changingFromCardId === deckCard.cardId ? null : deckCard.cardId);
+                    setCommanderQuery("");
+                  }}
+                >
+                  {changingFromCardId === deckCard.cardId ? "Cancel" : "Change commander"}
+                </Button>
               </div>
             );
           })}
+        </div>
+      ) : null}
+
+      {changingFromCardId ? (
+        <div className="card flex flex-col gap-3">
+          <p className="text-sm font-medium text-muted">Choose a new commander from your collection</p>
+          <input
+            type="search"
+            value={commanderQuery}
+            onChange={(event) => setCommanderQuery(event.target.value)}
+            placeholder="Search commanders"
+            className="rounded border border-border bg-transparent px-2 py-1 text-sm"
+          />
+          <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+            {commanderCandidates.length === 0 ? (
+              <li className="text-sm text-muted">No owned commanders match.</li>
+            ) : (
+              commanderCandidates.map((candidate) => (
+                <li key={candidate.id} className="flex items-center justify-between gap-4 text-sm">
+                  <span>
+                    {candidate.name} <span className="text-muted">- {candidate.type}</span>
+                  </span>
+                  <Button
+                    variant="secondary"
+                    className="px-4 py-1 text-xs"
+                    disabled={isChangingCommander}
+                    onClick={() => handleChangeCommander(changingFromCardId, candidate.id)}
+                  >
+                    {isChangingCommander ? "Changing..." : "Use"}
+                  </Button>
+                </li>
+              ))
+            )}
+          </ul>
         </div>
       ) : null}
 
@@ -714,15 +853,26 @@ export default function DeckPage() {
                 <span className="text-muted"> ({deckPrice.unpricedCount} cards unpriced)</span>
               ) : null}
             </p>
-            <Button
-              variant="secondary"
-              className="px-4 py-1 text-xs"
-              disabled={isRefreshingPrices}
-              onClick={handleRefreshPrices}
-            >
-              {isRefreshingPrices ? "Refreshing..." : "Refresh prices"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                className="px-4 py-1 text-xs"
+                disabled={isKeepingOwned}
+                onClick={handleKeepOwnedOnly}
+              >
+                {isKeepingOwned ? "Updating..." : "Update deck with only owned cards"}
+              </Button>
+              <Button
+                variant="secondary"
+                className="px-4 py-1 text-xs"
+                disabled={isRefreshingPrices}
+                onClick={handleRefreshPrices}
+              >
+                {isRefreshingPrices ? "Refreshing..." : "Refresh prices"}
+              </Button>
+            </div>
           </div>
+          {keepOwnedNotice ? <p className="text-sm text-muted">{keepOwnedNotice}</p> : null}
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border">
@@ -745,7 +895,7 @@ export default function DeckPage() {
                     {deckCard.isCommander ? " (Commander)" : ""}
                     {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                       <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                        Not owned
+                        Not owned - {formatUsd(deckCard.card.priceUsd)}
                       </span>
                     ) : null}
                     {otherDeckCardIds.has(deckCard.cardId) ? (
@@ -852,6 +1002,30 @@ export default function DeckPage() {
                 </Button>
               </div>
             </div>
+            <div className="flex items-center justify-end gap-2 text-sm">
+              <label htmlFor="suggestion-budget" className="text-muted">
+                Budget for cards I don&apos;t own ($)
+              </label>
+              <input
+                id="suggestion-budget"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="decimal"
+                value={budgetInput}
+                onChange={(event) => setBudgetInput(event.target.value)}
+                placeholder="20"
+                className="w-24 rounded border border-border bg-transparent px-2 py-1"
+              />
+              <Button
+                variant="secondary"
+                onClick={() => handleGetSuggestions(true, Number(budgetInput))}
+                disabled={isSuggesting || !(Number(budgetInput) > 0)}
+                className="px-5 py-2 text-sm"
+              >
+                Best cards for budget
+              </Button>
+            </div>
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {suggestedCards.map(({ card, tag, reason }) => (
@@ -863,7 +1037,7 @@ export default function DeckPage() {
                       <CardName name={card.name} oracleText={card.oracleText} />
                       {collectionCards && !ownedCardIds.has(card.id) ? (
                         <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                          Not owned
+                          Not owned - {formatUsd(card.priceUsd)}
                         </span>
                       ) : null}
                       {otherDeckCardIds.has(card.id) ? (

@@ -347,4 +347,32 @@ describe("suggestCards", () => {
     const prompt = completeMock.mock.calls[0][0] as string;
     expect(prompt).toContain("Suggest exactly 10 cards ");
   });
+  describe("with a budget", () => {
+    it("rejects a non-positive budget", async () => {
+      await expect(suggestCards("deck_1", { budgetUsd: 0 })).rejects.toThrow(CardSuggestionError);
+    });
+
+    it("picks the best combination of unowned cards that fits and keeps owned cards free", async () => {
+      mockDeck([]);
+      const owned = card({ id: "owned", name: "Owned Card", colorIdentity: ["W"] });
+      const big = card({ id: "big", name: "Big Card", colorIdentity: ["W"], priceUsd: 15 });
+      const b = card({ id: "b", name: "Cheap B", colorIdentity: ["W"], priceUsd: 10 });
+      const c = card({ id: "c", name: "Cheap C", colorIdentity: ["W"], priceUsd: 10 });
+      const d = card({ id: "d", name: "Cheap D", colorIdentity: ["W"], priceUsd: 10 });
+      collectionFindManyMock.mockResolvedValue([{ cardId: owned.id, card: owned, quantity: 1 }]);
+      cardFindManyMock.mockResolvedValue([big, b, c, d]);
+      mockCompletion(
+        ["Owned Card", "Big Card", "Cheap B", "Cheap C", "Cheap D"]
+          .map((name) => `${name} :: Synergy :: Fits.`)
+          .join("\n"),
+      );
+
+      const result = await suggestCards("deck_1", { budgetUsd: 20 });
+
+      expect(result.map((s) => s.card.name)).toEqual(["Owned Card", "Cheap B", "Cheap C"]);
+      expect(cardFindManyMock).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ priceUsd: { lte: 20 } }) }),
+      );
+    });
+  });
 });
