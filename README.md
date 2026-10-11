@@ -41,7 +41,6 @@ Card rules data still comes from MTGJSON, but live data comes from the [Scryfall
 - **Bulk refresh**: `npm run sync-prices` refreshes every card in a collection or deck (`-- --all` for the whole catalog, `-- --force` to ignore the 24h staleness check).
 - **Lookup**: `GET /api/cards/lookup?name=sol rng` returns a fuzzy-matched card with oracle text, image, and prices; add `&autocomplete=1` for name suggestions.
 
-Scryfall's domains are blocked on the Tricentis corporate network, so these return a 502 / "Could not reach Scryfall" there. They work from home networks and from the NAS.
 
 ### Deploying (Docker / Unraid)
 
