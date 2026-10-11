@@ -7,7 +7,7 @@ import {
   validateColorIdentity,
 } from "@/lib/commander-legality";
 import { selectWithinBudget } from "@/lib/budget-selection";
-import { refreshCardPrices } from "@/lib/card-prices";
+import { findBudgetCandidates } from "@/lib/budget-candidates";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -153,12 +153,31 @@ export async function suggestCards(
     // cards to buy.
     ...(budgetUsd !== undefined ? Array.from(ownedByCardId.keys()) : []),
   ];
-  const pool = allowUnowned
-    ? dedupeById([
-        ...remainingPool,
-        ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds)),
-      ])
-    : remainingPool;
+  let pool: Card[];
+  if (budgetUsd !== undefined) {
+    // Budget mode searches Scryfall for affordable, role- and
+    // synergy-matched cards (already priced) instead of offering the
+    // whole local catalog to the LLM.
+    let candidates: Card[];
+    try {
+      candidates = await findBudgetCandidates({
+        commanders,
+        colorIdentity,
+        budgetUsd,
+        excludeIds,
+        complete: (prompt) => getLlmProvider().complete(prompt),
+      });
+    } catch {
+      throw new CardSuggestionError(
+        "Couldn't search Scryfall for cards within your budget. Try again shortly.",
+      );
+    }
+    pool = dedupeById([...remainingPool, ...candidates]);
+  } else {
+    pool = allowUnowned
+      ? dedupeById([...remainingPool, ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds))])
+      : remainingPool;
+  }
 
   if (pool.length === 0) {
     return [];
@@ -199,27 +218,9 @@ export async function suggestCards(
     matched.set(card.id, { card, tag, reason });
   }
 
-  let ranked = Array.from(matched.values());
+  const ranked = Array.from(matched.values());
   if (budgetUsd === undefined) {
     return ranked;
-  }
-
-  // Catalog cards are rarely priced yet, so only the ones the LLM actually
-  // picked get a live price lookup, rather than pricing the whole catalog.
-  const unownedIds = ranked.filter(({ card }) => !ownedIds.has(card.id)).map(({ card }) => card.id);
-  if (unownedIds.length > 0) {
-    try {
-      await refreshCardPrices(unownedIds);
-    } catch {
-      throw new CardSuggestionError("Couldn't fetch current card prices, so the budget can't be applied. Try again shortly.");
-    }
-    const priced = new Map(
-      (await prisma.card.findMany({ where: { id: { in: unownedIds } } })).map((card) => [card.id, card]),
-    );
-    ranked = ranked
-      .map((suggestion) => ({ ...suggestion, card: priced.get(suggestion.card.id) ?? suggestion.card }))
-      // A card with no price can't be checked against the budget.
-      .filter(({ card }) => ownedIds.has(card.id) || card.priceUsd !== null);
   }
 
   const chosenIds = new Set(
