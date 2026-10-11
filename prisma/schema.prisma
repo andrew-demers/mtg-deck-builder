@@ -38,6 +38,10 @@ model Card {
   legalities          Json
   scryfallOracleId    String?
   isCommanderEligible Boolean
+  priceUsd            Float?
+  priceUsdFoil        Float?
+  imageUrl            String?
+  pricesUpdatedAt     DateTime?
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   collectionEntries   CollectionEntry[]

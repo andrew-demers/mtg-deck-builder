@@ -48,3 +48,7 @@ next-env.d.ts
 /.windsurf/skills
 /.agents/skills
 /skills-lock.json
+
+# corporate/proxy root CA for Docker builds (see certs/README.md) - never commit
+/certs/*.crt
+/certs/*.pem
