@@ -13,12 +13,15 @@ export interface ManaBoxRow {
   scryfallId: string | null;
   quantity: number;
   foil: boolean;
+  /** Present when the export has a "Set name" column; used to spot token rows. */
+  setName?: string;
 }
 
 type RawRow = Record<string, string | undefined>;
 
 const NAME_HEADER_NAMES = ["name"];
 const SET_CODE_HEADER_NAMES = ["set code"];
+const SET_NAME_HEADER_NAMES = ["set name"];
 const SCRYFALL_ID_HEADER_NAMES = ["scryfall id"];
 const QUANTITY_HEADER_NAMES = ["quantity"];
 const FOIL_HEADER_NAMES = ["foil"];
@@ -72,20 +75,17 @@ function parseQuantity(rawQuantity: string | undefined): number {
   return parsed;
 }
 
-// ManaBox's `Foil` column encoding is not confirmed against a real export
-// (see the plan's Group D self-review note). Research suggests different
-// export versions use either "foil"/"normal" or "true"/"false" strings. We
-// only reliably handle the former: a case-insensitive substring match on
-// "foil". A "true"/"false"-style export would be silently read as non-foil
-// under this heuristic, since "true" does not contain "foil" - flagged here
-// rather than guessed at, since there was no real export file to confirm
-// the exact encoding against.
+// Real ManaBox exports encode `Foil` as "normal" / "foil" (and "etched" for
+// etched foils), so a case-insensitive substring match on "foil" plus an
+// explicit "etched" check covers them. A "true"/"false"-style export would be
+// read as non-foil.
 function parseFoil(rawFoil: string | undefined): boolean {
   if (rawFoil === undefined) {
     return false;
   }
 
-  return rawFoil.toLowerCase().includes("foil");
+  const normalized = rawFoil.toLowerCase();
+  return normalized.includes("foil") || normalized.includes("etched");
 }
 
 const EXPORT_HEADER = ["Name", "Set code", "Scryfall ID", "Quantity", "Foil"];
@@ -138,6 +138,38 @@ export function parseManaBoxCsv(csvText: string): ManaBoxRow[] {
       scryfallId: findValue(row, SCRYFALL_ID_HEADER_NAMES) || null,
       quantity: parseQuantity(findValue(row, QUANTITY_HEADER_NAMES)),
       foil: parseFoil(findValue(row, FOIL_HEADER_NAMES)),
+      setName: findValue(row, SET_NAME_HEADER_NAMES) || undefined,
     };
   });
+}
+
+/**
+ * Token rows (e.g. set "Edge of Eternities Tokens") describe token cards
+ * that aren't in the card catalog, so they can never be matched.
+ */
+export function isTokenRow(row: ManaBoxRow): boolean {
+  return row.setName !== undefined && /\btokens?$/i.test(row.setName);
+}
+
+/**
+ * Collapses rows for the same card and finish into one, summing quantities.
+ * A bulk export lists a card once per printing and binder, but a collection
+ * entry is keyed on (card, foil) - without this, each row would overwrite the
+ * previous one's quantity. The first row's set code and Scryfall ID are kept.
+ */
+export function aggregateManaBoxRows(rows: ManaBoxRow[]): ManaBoxRow[] {
+  const merged = new Map<string, ManaBoxRow>();
+
+  for (const row of rows) {
+    const key = `${row.name.toLowerCase()}|${row.foil}`;
+    const existing = merged.get(key);
+
+    if (existing) {
+      existing.quantity += row.quantity;
+    } else {
+      merged.set(key, { ...row });
+    }
+  }
+
+  return [...merged.values()];
 }

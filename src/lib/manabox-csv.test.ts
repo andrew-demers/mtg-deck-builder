@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { formatManaBoxCsv, parseManaBoxCsv } from "@/lib/manabox-csv";
+import {
+  aggregateManaBoxRows,
+  formatManaBoxCsv,
+  isTokenRow,
+  parseManaBoxCsv,
+} from "@/lib/manabox-csv";
 
 function readFixture(fileName: string): string {
   return readFileSync(path.join(__dirname, "__fixtures__", fileName), "utf-8");
@@ -19,6 +24,7 @@ describe("parseManaBoxCsv", () => {
       scryfallId: "scry-atraxa",
       quantity: 1,
       foil: true,
+      setName: "Dominaria",
     });
 
     expect(rows[1]).toEqual({
@@ -27,6 +33,7 @@ describe("parseManaBoxCsv", () => {
       scryfallId: "scry-grizzly",
       quantity: 4,
       foil: false,
+      setName: "Limited Edition Alpha",
     });
 
     expect(rows[2]).toEqual({
@@ -35,6 +42,7 @@ describe("parseManaBoxCsv", () => {
       scryfallId: "scry-clear",
       quantity: 2,
       foil: false,
+      setName: "Modern Horizons 2",
     });
   });
 
@@ -61,6 +69,7 @@ describe("parseManaBoxCsv", () => {
       scryfallId: "scry-clear",
       quantity: 1,
       foil: false,
+      setName: "Modern Horizons 2",
     });
   });
 
@@ -98,6 +107,54 @@ describe("parseManaBoxCsv", () => {
         foil: true,
       },
     ]);
+  });
+});
+
+describe("bulk export (all binders)", () => {
+  const rows = parseManaBoxCsv(readFixture("manabox-bulk-sample.csv"));
+
+  it("parses the bulk export format, including quoted names and double-faced names", () => {
+    expect(rows).toHaveLength(9);
+    expect(rows[0]).toMatchObject({
+      name: "Ixhel, Scion of Atraxa",
+      setCode: "ONC",
+      quantity: 1,
+      foil: true,
+      setName: "Phyrexia: All Will Be One Commander",
+    });
+    expect(rows[3].name).toBe("Pinnacle Monk // Mystic Peak");
+  });
+
+  it("reads etched finishes as foil", () => {
+    expect(rows[8]).toMatchObject({ name: "Sol Ring", foil: true });
+  });
+
+  it("identifies token rows by set name", () => {
+    expect(rows.filter(isTokenRow).map((row) => row.name)).toEqual(["Drone"]);
+  });
+
+  it("sums quantities for the same card and finish across printings and binders", () => {
+    const aggregated = aggregateManaBoxRows(rows);
+
+    const normalForest = aggregated.find((row) => row.name === "Forest" && !row.foil);
+    const foilForest = aggregated.find((row) => row.name === "Forest" && row.foil);
+
+    expect(normalForest?.quantity).toBe(10);
+    expect(foilForest?.quantity).toBe(1);
+    expect(aggregated).toHaveLength(7);
+  });
+
+  it("matches names case-insensitively when aggregating and does not mutate its input", () => {
+    const input = [
+      { name: "Sol Ring", setCode: "A", scryfallId: null, quantity: 1, foil: false },
+      { name: "sol ring", setCode: "B", scryfallId: null, quantity: 2, foil: false },
+    ];
+
+    const aggregated = aggregateManaBoxRows(input);
+
+    expect(aggregated).toHaveLength(1);
+    expect(aggregated[0]).toMatchObject({ setCode: "A", quantity: 3 });
+    expect(input[0].quantity).toBe(1);
   });
 });
 

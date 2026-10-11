@@ -6,12 +6,15 @@ import Button from "@/components/button";
 interface ImportSummary {
   matched: number;
   unmatched: number;
+  skippedTokens: number;
+  removed: number;
 }
 
 export default function ImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,6 +33,7 @@ export default function ImportPage() {
 
     const formData = new FormData();
     formData.set("file", fileInput.files[0]);
+    formData.set("replace", String(replaceExisting));
 
     try {
       const response = await fetch("/api/collection/import", {
@@ -61,10 +65,28 @@ export default function ImportPage() {
           <span className="text-sm font-medium">ManaBox CSV export</span>
           <input name="file" type="file" accept=".csv" required className="input" />
         </label>
+        <p className="text-xs text-muted">
+          In ManaBox, export all your binders at once; rows for the same card are added together
+          and token rows are skipped.
+        </p>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={replaceExisting}
+            onChange={(event) => setReplaceExisting(event.target.checked)}
+            className="mt-1"
+          />
+          <span>
+            Replace my collection - remove owned cards that are not in this file. Decks are not
+            affected.
+          </span>
+        </label>
         {error ? <p className="text-sm text-danger">{error}</p> : null}
         {summary ? (
           <p className="text-sm text-muted">
-            Matched: {summary.matched}, Unmatched: {summary.unmatched}
+            Matched: {summary.matched}, Unmatched: {summary.unmatched}, Tokens skipped:{" "}
+            {summary.skippedTokens}
+            {summary.removed > 0 ? `, Removed: ${summary.removed}` : ""}
           </p>
         ) : null}
         <Button type="submit" disabled={isSubmitting} className="px-7 py-3">
