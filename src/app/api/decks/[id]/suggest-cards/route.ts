@@ -5,6 +5,7 @@ import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
 
 interface SuggestCardsBody {
   allowUnowned?: boolean;
+  budgetUsd?: number;
 }
 
 /**
@@ -15,7 +16,8 @@ interface SuggestCardsBody {
  * short tag and a one-sentence reason for the suggestion. An optional JSON
  * body `{ allowUnowned: boolean }` widens the pool to the full card catalog
  * (still filtered to color identity) instead of just the caller's owned
- * cards; omitted/absent defaults to false. 404 if the deck doesn't exist,
+ * cards; omitted/absent defaults to false. `budgetUsd` caps the total price
+ * of suggested cards the caller doesn't own (implies allowUnowned). 404 if the deck doesn't exist,
  * 403 if it belongs to a different user, 400 if the deck has no commander
  * set.
  */
@@ -45,7 +47,10 @@ export async function POST(
   const body = (await request.json().catch(() => null)) as SuggestCardsBody | null;
 
   try {
-    const cards = await suggestCards(id, { allowUnowned: body?.allowUnowned ?? false });
+    const cards = await suggestCards(id, {
+      allowUnowned: body?.allowUnowned ?? false,
+      budgetUsd: typeof body?.budgetUsd === "number" ? body.budgetUsd : undefined,
+    });
     return NextResponse.json(cards, { status: 200 });
   } catch (error) {
     if (error instanceof CardSuggestionError) {

@@ -84,6 +84,7 @@ export default function DeckPage() {
   const [error, setError] = useState<string | null>(null);
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [budgetInput, setBudgetInput] = useState("");
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
@@ -298,7 +299,7 @@ export default function DeckPage() {
     }
   }
 
-  async function handleGetSuggestions(allowUnowned: boolean) {
+  async function handleGetSuggestions(allowUnowned: boolean, budgetUsd?: number) {
     setError(null);
     setIsSuggesting(true);
 
@@ -306,7 +307,7 @@ export default function DeckPage() {
       const response = await fetch(`/api/decks/${deckId}/suggest-cards`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowUnowned }),
+        body: JSON.stringify({ allowUnowned, budgetUsd }),
       });
 
       if (!response.ok) {
@@ -665,7 +666,7 @@ export default function DeckPage() {
                   <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
                   {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                     <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                      Not owned
+                      Not owned - {formatUsd(deckCard.card.priceUsd)}
                     </span>
                   ) : null}
                   {otherDeckCardIds.has(deckCard.cardId) ? (
@@ -745,7 +746,7 @@ export default function DeckPage() {
                     {deckCard.isCommander ? " (Commander)" : ""}
                     {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                       <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                        Not owned
+                        Not owned - {formatUsd(deckCard.card.priceUsd)}
                       </span>
                     ) : null}
                     {otherDeckCardIds.has(deckCard.cardId) ? (
@@ -852,6 +853,30 @@ export default function DeckPage() {
                 </Button>
               </div>
             </div>
+            <div className="flex items-center justify-end gap-2 text-sm">
+              <label htmlFor="suggestion-budget" className="text-muted">
+                Budget for cards I don&apos;t own ($)
+              </label>
+              <input
+                id="suggestion-budget"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="decimal"
+                value={budgetInput}
+                onChange={(event) => setBudgetInput(event.target.value)}
+                placeholder="20"
+                className="w-24 rounded border border-border bg-transparent px-2 py-1"
+              />
+              <Button
+                variant="secondary"
+                onClick={() => handleGetSuggestions(true, Number(budgetInput))}
+                disabled={isSuggesting || !(Number(budgetInput) > 0)}
+                className="px-5 py-2 text-sm"
+              >
+                Best cards for budget
+              </Button>
+            </div>
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {suggestedCards.map(({ card, tag, reason }) => (
@@ -863,7 +888,7 @@ export default function DeckPage() {
                       <CardName name={card.name} oracleText={card.oracleText} />
                       {collectionCards && !ownedCardIds.has(card.id) ? (
                         <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
-                          Not owned
+                          Not owned - {formatUsd(card.priceUsd)}
                         </span>
                       ) : null}
                       {otherDeckCardIds.has(card.id) ? (
