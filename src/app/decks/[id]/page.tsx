@@ -9,6 +9,7 @@ import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
 import Markdown from "@/components/markdown";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
+import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
@@ -21,6 +22,7 @@ interface CardData {
   colors: string[];
   colorIdentity: string[];
   oracleText: string | null;
+  priceUsd: number | null;
 }
 
 interface OwnedCollectionEntry {
@@ -78,6 +80,7 @@ export default function DeckPage() {
   const [isBuilding, setIsBuilding] = useState(false);
   const [isCritiquing, setIsCritiquing] = useState(false);
   const [isDescribing, setIsDescribing] = useState(false);
+  const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
@@ -224,6 +227,30 @@ export default function DeckPage() {
       setError("Something went wrong building this deck.");
     } finally {
       setIsBuilding(false);
+    }
+  }
+
+  async function handleRefreshPrices() {
+    setError(null);
+    setIsRefreshingPrices(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/prices`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong refreshing prices.");
+        return;
+      }
+
+      const deckResponse = await fetch(`/api/decks/${deckId}`);
+      if (deckResponse.ok) {
+        setDeck((await deckResponse.json()) as DeckData);
+      }
+    } catch {
+      setError("Something went wrong refreshing prices.");
+    } finally {
+      setIsRefreshingPrices(false);
     }
   }
 
@@ -578,6 +605,8 @@ export default function DeckPage() {
       (normalizedCollectionQuery === "" || card.name.toLowerCase().includes(normalizedCollectionQuery)),
   );
 
+  const deckPrice = computeDeckPrice(deck.cards);
+
   const normalizedSwapQuery = swapQuery.trim().toLowerCase();
   const swapCandidates = (collectionCards ?? []).filter(
     (card) =>
@@ -678,12 +707,29 @@ export default function DeckPage() {
       ) : (
         <>
           <CardStats entries={deck.cards} label="cards in deck" />
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm">
+              <span className="font-medium">Estimated price:</span> {formatUsd(deckPrice.totalUsd)}
+              {deckPrice.unpricedCount > 0 ? (
+                <span className="text-muted"> ({deckPrice.unpricedCount} cards unpriced)</span>
+              ) : null}
+            </p>
+            <Button
+              variant="secondary"
+              className="px-4 py-1 text-xs"
+              disabled={isRefreshingPrices}
+              onClick={handleRefreshPrices}
+            >
+              {isRefreshingPrices ? "Refreshing..." : "Refresh prices"}
+            </Button>
+          </div>
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border">
                 <th className="py-2 pr-4 font-medium">Name</th>
                 <th className="py-2 pr-4 font-medium">Mana cost</th>
                 <th className="py-2 pr-4 font-medium">Type</th>
+                <th className="py-2 pr-4 font-medium">Price</th>
                 <th className="py-2 pr-4 font-medium">Quantity</th>
                 <th className="py-2 pr-4 font-medium"></th>
               </tr>
@@ -710,6 +756,7 @@ export default function DeckPage() {
                     {deckCard.card.manaCost ? <ManaCost value={deckCard.card.manaCost} /> : "-"}
                   </td>
                   <td className="py-2 pr-4">{deckCard.card.type}</td>
+                  <td className="py-2 pr-4">{formatUsd(deckCard.card.priceUsd)}</td>
                   <td className="py-2 pr-4">
                     {isBasicLand(deckCard.card) ? (
                       <div className="flex items-center gap-2">

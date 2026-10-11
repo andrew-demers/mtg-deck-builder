@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env*
+!.env.example
+.remember
+.claude
+.windsurf
+.agents
+plans
+*.tsbuildinfo
+pnpm-lock.yaml
+pnpm-workspace.yaml
+src/generated
