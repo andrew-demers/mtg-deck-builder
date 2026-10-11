@@ -9,7 +9,7 @@ This is the first vertical slice: account signup/login, ManaBox CSV import, card
 1. Copy `.env.example` to `.env` and fill in `NEXTAUTH_SECRET` (any random 32+ byte string).
 2. Start local Postgres:
    ```bash
-   docker compose up -d db
+   docker compose -f docker-compose.dev.yml up -d db
    ```
 3. Install dependencies and apply migrations:
    ```bash
@@ -43,22 +43,36 @@ Card rules data still comes from MTGJSON, but live data comes from the [Scryfall
 
 Scryfall's domains are blocked on the Tricentis corporate network, so these return a 502 / "Could not reach Scryfall" there. They work from home networks and from the NAS.
 
-### Deploying to Unraid
+### Deploying (Docker / Unraid)
 
-The stack (Next.js app + Postgres) is defined in `docker-compose.unraid.yml`.
+Deployment mirrors [auto-tracker](https://github.com/andrew-demers/auto-tracker): `.github/workflows/docker-publish.yml` builds an image and pushes it to GitHub Container Registry (`ghcr.io/andrew-demers/mtg-deck-builder`) on every push to `main`, and `docker-compose.yml` pulls it alongside a Postgres container. On the NAS you only need the compose file and a `.env`.
 
-1. Copy the repo to the NAS (e.g. `/mnt/user/appdata/mtg-deck-builder`), or `git clone` it there.
-2. `cp .env.unraid.example .env` and fill in `POSTGRES_PASSWORD`, `NEXTAUTH_SECRET` (`openssl rand -base64 32`), and `NEXTAUTH_URL` (the address you'll browse to, e.g. `http://tower.local:3000`).
-3. Build and start (SSH, or the Docker Compose Manager plugin pointed at the compose file):
+1. **Make the image pullable.** The GHCR package is private by default. After the first publish, go to the repo's **Packages** > `mtg-deck-builder` > **Package settings** > change visibility to public (or run `docker login ghcr.io` on the NAS).
+2. **Put the compose file and env on the NAS** (SSH in):
    ```bash
-   docker compose -f docker-compose.unraid.yml up -d --build
+   mkdir -p /mnt/user/appdata/mtg-deck-builder && cd /mnt/user/appdata/mtg-deck-builder
+   curl -O https://raw.githubusercontent.com/andrew-demers/mtg-deck-builder/main/docker-compose.yml
+   curl -o .env https://raw.githubusercontent.com/andrew-demers/mtg-deck-builder/main/.env.example
+   nano .env
    ```
-   Migrations are applied automatically on every container start.
-4. One-time card catalog load, then prices:
+   Set `POSTGRES_PASSWORD`, `NEXTAUTH_SECRET` (`openssl rand -base64 32`), `NEXTAUTH_URL` (the exact address you browse to, e.g. `http://tower.local:3000`), and `ANTHROPIC_API_KEY` (or `LLM_PROVIDER=ollama`). Change `APP_PORT` if 3000 is taken.
+3. **Start it:**
    ```bash
-   docker compose -f docker-compose.unraid.yml exec app npm run sync-cards
-   docker compose -f docker-compose.unraid.yml exec app npm run sync-prices
+   docker compose up -d
    ```
-5. Open `http://<nas-address>:3000` and sign up.
+   Migrations run automatically on every start. Check progress with `docker compose logs -f app`.
+4. **Load the card catalog (one time), then prices:**
+   ```bash
+   docker compose exec app npm run sync-cards
+   docker compose exec app npm run sync-prices
+   ```
+   Run `sync-prices` after importing your collection - it only prices cards that are in a collection or deck.
+5. Open `NEXTAUTH_URL`, sign up, and import your ManaBox CSV.
 
-Postgres data lives in the `db-data` Docker volume; back it up with `docker compose -f docker-compose.unraid.yml exec db pg_dump -U mtg mtg_deck_builder > backup.sql`. The app has no HTTPS of its own - put it behind Unraid's reverse proxy (Nginx Proxy Manager, SWAG) or keep it LAN-only.
+**Unraid notes**
+- Replace the `mtg-deck-builder-db` named volume in `docker-compose.yml` with a bind mount to `/mnt/user/appdata/mtg-deck-builder/db` (ideally on a cache pool) so Unraid backups can see it. If Postgres can't write to it, `chown 999:999` that folder.
+- To put it behind a reverse proxy (Nginx Proxy Manager, SWAG), proxy to port 3000 and set `NEXTAUTH_URL` to the public URL.
+- For auto-updates, install **Watchtower** from Community Applications with `WATCHTOWER_LABEL_ENABLE=true`; the app container already has the opt-in label.
+- Backup: `docker compose exec db pg_dump -U mtg mtg_deck_builder > backup.sql`.
+
+**Building locally instead** (before the first publish, or to test changes): in `docker-compose.yml`, comment out `image:` and uncomment `build: .`, then `docker compose up -d --build`. On a TLS-inspecting network (Zscaler), first drop your root CA in `certs/` - see `certs/README.md`.

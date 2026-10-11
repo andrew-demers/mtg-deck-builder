@@ -33,7 +33,6 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
-!.env.unraid.example
 
 # vercel
 .vercel
@@ -49,3 +48,7 @@ next-env.d.ts
 /.windsurf/skills
 /.agents/skills
 /skills-lock.json
+
+# corporate/proxy root CA for Docker builds (see certs/README.md) - never commit
+/certs/*.crt
+/certs/*.pem

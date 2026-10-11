@@ -4,12 +4,48 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: mtg
-      POSTGRES_PASSWORD: mtg
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - set it in .env}
       POSTGRES_DB: mtg_deck_builder
-    ports:
-      - "5432:5432"
     volumes:
+      # On Unraid, replace this with a bind mount to
+      # /mnt/user/appdata/mtg-deck-builder/db - see README.
       - mtg-deck-builder-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mtg -d mtg_deck_builder"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    # Pulls the image built by .github/workflows/docker-publish.yml on every
+    # push to main. To build locally from source instead (e.g. to use the
+    # certs/ corporate-proxy escape hatch), comment out `image:` and
+    # uncomment `build: .`.
+    image: ghcr.io/andrew-demers/mtg-deck-builder:latest
+    # build: .
+    pull_policy: always
+    restart: unless-stopped
+    # Opt this container into Watchtower's updates without Watchtower touching
+    # every other container on the box - see README.
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://mtg:${POSTGRES_PASSWORD}@db:5432/mtg_deck_builder?schema=public
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required - generate one with `openssl rand -base64 32`}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      AUTH_TRUST_HOST: "true"
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+      TZ: ${TZ:-UTC}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   mtg-deck-builder-db:
