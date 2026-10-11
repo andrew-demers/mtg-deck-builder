@@ -11,6 +11,7 @@ import Markdown from "@/components/markdown";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { isCommanderEligible } from "@/lib/commander-eligibility";
+import { buildBuyList, buildMassEntryUrl, formatBuyListText } from "@/lib/tcgplayer";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
 
 interface CardData {
@@ -702,6 +703,9 @@ export default function DeckPage() {
 
   const deckPrice = computeDeckPrice(deck.cards);
 
+  const buyList = collectionCards ? buildBuyList(deck.cards, ownedCardIds) : [];
+  const massEntryUrl = buildMassEntryUrl(buyList);
+
   const normalizedSwapQuery = swapQuery.trim().toLowerCase();
   const swapCandidates = (collectionCards ?? []).filter(
     (card) =>
@@ -862,6 +866,26 @@ export default function DeckPage() {
               >
                 {isKeepingOwned ? "Updating..." : "Update deck with only owned cards"}
               </Button>
+              {massEntryUrl ? (
+                <LinkButton
+                  variant="secondary"
+                  className="px-4 py-1 text-xs"
+                  href={massEntryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Buy {buyList.length} on TCGplayer
+                </LinkButton>
+              ) : null}
+              {buyList.length > 0 ? (
+                <Button
+                  variant="secondary"
+                  className="px-4 py-1 text-xs"
+                  onClick={() => navigator.clipboard.writeText(formatBuyListText(buyList))}
+                >
+                  Copy buy list
+                </Button>
+              ) : null}
               <Button
                 variant="secondary"
                 className="px-4 py-1 text-xs"
