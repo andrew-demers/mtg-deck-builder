@@ -61,12 +61,11 @@ Deployment mirrors [auto-tracker](https://github.com/andrew-demers/auto-tracker)
    docker compose up -d
    ```
    Migrations run automatically on every start. Check progress with `docker compose logs -f app`.
-4. **Load the card catalog (one time), then prices:**
+4. **Card catalog and prices.** The catalog (~35k cards, about 1.5 GB of RAM at peak) loads automatically in the background on first start - watch `docker compose logs -f app` for `[ensure-cards]`. Until it finishes, imports show cards as unmatched. If a load is ever interrupted, the next start finishes it. Set `AUTO_SYNC_CARDS=false` to disable. Re-run `docker compose exec app npm run sync-cards` when new sets release. Prices are fetched on demand:
    ```bash
-   docker compose exec app npm run sync-cards
    docker compose exec app npm run sync-prices
    ```
-   Run `sync-prices` after importing your collection - it only prices cards that are in a collection or deck.
+   Run it after importing your collection - it only prices cards that are in a collection or deck.
 5. Open `NEXTAUTH_URL`, sign up, and import your ManaBox CSV.
 
 **Unraid notes**

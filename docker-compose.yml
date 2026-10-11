@@ -44,6 +44,8 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
       TZ: ${TZ:-UTC}
+      # Loads the card catalog on first start if it is empty.
+      AUTO_SYNC_CARDS: ${AUTO_SYNC_CARDS:-true}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
