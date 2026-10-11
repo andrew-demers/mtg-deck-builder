@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Button from "@/components/button";
+import Button, { LinkButton } from "@/components/button";
 import ManaCost from "@/components/mana-cost";
 import ColorIdentityPips from "@/components/color-identity";
 import CardStats from "@/components/card-stats";
@@ -52,6 +52,12 @@ interface SuggestedCard {
   reason: string;
 }
 
+interface ReplacementSuggestion {
+  add: CardData;
+  remove: CardData;
+  reason: string;
+}
+
 function sortDeckCards(cards: DeckCardData[]): DeckCardData[] {
   return [...cards].sort((a, b) => {
     if (a.isCommander !== b.isCommander) {
@@ -83,6 +89,11 @@ export default function DeckPage() {
   const [collectionQuery, setCollectionQuery] = useState("");
   const [switchingCardId, setSwitchingCardId] = useState<string | null>(null);
   const [otherDeckCardIds, setOtherDeckCardIds] = useState<Set<string>>(new Set());
+  const [swapQuery, setSwapQuery] = useState("");
+  const [selectedNewCardIds, setSelectedNewCardIds] = useState<Set<string>>(new Set());
+  const [replacements, setReplacements] = useState<ReplacementSuggestion[]>([]);
+  const [isFindingReplacements, setIsFindingReplacements] = useState(false);
+  const [applyingSwapId, setApplyingSwapId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!deckId) {
@@ -286,6 +297,87 @@ export default function DeckPage() {
     }
   }
 
+  function toggleNewCard(cardId: string) {
+    setSelectedNewCardIds((current) => {
+      const next = new Set(current);
+      if (next.has(cardId)) {
+        next.delete(cardId);
+      } else {
+        next.add(cardId);
+      }
+      return next;
+    });
+  }
+
+  async function handleGetReplacements() {
+    setError(null);
+    setIsFindingReplacements(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/replace-suggestions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardIds: Array.from(selectedNewCardIds) }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong getting replacement suggestions.");
+        return;
+      }
+
+      const data = (await response.json()) as ReplacementSuggestion[];
+      setReplacements(data);
+    } catch {
+      setError("Something went wrong getting replacement suggestions.");
+    } finally {
+      setIsFindingReplacements(false);
+    }
+  }
+
+  async function handleApplyReplacement({ add, remove }: ReplacementSuggestion) {
+    setError(null);
+    setApplyingSwapId(add.id);
+
+    try {
+      const addResponse = await fetch(`/api/decks/${deckId}/cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId: add.id }),
+      });
+
+      if (!addResponse.ok) {
+        const data = (await addResponse.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong adding this card to the deck.");
+        return;
+      }
+
+      const removeResponse = await fetch(`/api/decks/${deckId}/cards/${remove.id}`, {
+        method: "DELETE",
+      });
+
+      if (!removeResponse.ok) {
+        // The add already succeeded, so show the deck as it now stands (one
+        // card over) rather than hiding that half of the swap happened.
+        setDeck((await addResponse.json()) as DeckData);
+        setError(`Added ${add.name}, but couldn't remove ${remove.name}. Remove it manually.`);
+        return;
+      }
+
+      setDeck((await removeResponse.json()) as DeckData);
+      setReplacements((current) => current.filter((swap) => swap.add.id !== add.id));
+      setSelectedNewCardIds((current) => {
+        const next = new Set(current);
+        next.delete(add.id);
+        return next;
+      });
+    } catch {
+      setError("Something went wrong applying this swap.");
+    } finally {
+      setApplyingSwapId(null);
+    }
+  }
+
   async function handleAddCard(cardId: string) {
     setError(null);
     setAddingCardId(cardId);
@@ -486,18 +578,37 @@ export default function DeckPage() {
       (normalizedCollectionQuery === "" || card.name.toLowerCase().includes(normalizedCollectionQuery)),
   );
 
+  const normalizedSwapQuery = swapQuery.trim().toLowerCase();
+  const swapCandidates = (collectionCards ?? []).filter(
+    (card) =>
+      (!deckCardIds.has(card.id) || selectedNewCardIds.has(card.id)) &&
+      validateColorIdentity(commanderColorIdentity, [card]) &&
+      (normalizedSwapQuery === "" ||
+        card.name.toLowerCase().includes(normalizedSwapQuery) ||
+        selectedNewCardIds.has(card.id)),
+  );
+
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between gap-4">
         <h1 className="font-display text-3xl tracking-wide">{deck.name}</h1>
-        <Button
-          variant="secondary"
-          className="px-4 py-1 text-xs text-danger"
-          disabled={isDeletingDeck}
-          onClick={handleDeleteDeck}
-        >
-          {isDeletingDeck ? "Deleting..." : "Delete deck"}
-        </Button>
+        <div className="flex gap-2">
+          <LinkButton
+            variant="secondary"
+            className="px-4 py-1 text-xs"
+            href={`/api/decks/${deckId}/export`}
+          >
+            Export
+          </LinkButton>
+          <Button
+            variant="secondary"
+            className="px-4 py-1 text-xs text-danger"
+            disabled={isDeletingDeck}
+            onClick={handleDeleteDeck}
+          >
+            {isDeletingDeck ? "Deleting..." : "Delete deck"}
+          </Button>
+        </div>
       </div>
 
       {commanderDeckCards.length > 0 ? (
@@ -731,6 +842,76 @@ export default function DeckPage() {
                       className="px-4 py-1 text-xs"
                     >
                       {addingCardId === card.id ? "Adding..." : "Add"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+
+          <div className="card flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-muted">Swap in new cards</p>
+              <Button
+                onClick={handleGetReplacements}
+                disabled={isFindingReplacements || selectedNewCardIds.size === 0}
+                className="self-start px-5 py-2 text-sm"
+              >
+                {isFindingReplacements
+                  ? "Finding replacements..."
+                  : `Recommend cuts${selectedNewCardIds.size > 0 ? ` (${selectedNewCardIds.size})` : ""}`}
+              </Button>
+            </div>
+            {collectionCards ? (
+              <>
+                <input
+                  type="text"
+                  value={swapQuery}
+                  onChange={(event) => setSwapQuery(event.target.value)}
+                  placeholder="Search your collection for the cards you just got"
+                  className="input text-sm"
+                />
+                {swapCandidates.length === 0 ? (
+                  <p className="text-sm text-muted">No owned cards match.</p>
+                ) : (
+                  <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                    {swapCandidates.map((card) => (
+                      <li key={card.id} className="text-sm">
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedNewCardIds.has(card.id)}
+                            onChange={() => toggleNewCard(card.id)}
+                          />
+                          <CardName name={card.name} oracleText={card.oracleText} />
+                          <span className="text-muted">- {card.type}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted">Loading your collection...</p>
+            )}
+            {replacements.length > 0 ? (
+              <ul className="flex flex-col gap-2 border-t border-border pt-3">
+                {replacements.map((swap) => (
+                  <li key={swap.add.id} className="flex items-center justify-between gap-4 text-sm">
+                    <span>
+                      <span className="text-muted">Cut </span>
+                      <CardName name={swap.remove.name} oracleText={swap.remove.oracleText} />
+                      <span className="text-muted"> for </span>
+                      <CardName name={swap.add.name} oracleText={swap.add.oracleText} />
+                      <span className="block text-xs text-muted">{swap.reason}</span>
+                    </span>
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleApplyReplacement(swap)}
+                      disabled={applyingSwapId === swap.add.id}
+                      className="px-4 py-1 text-xs"
+                    >
+                      {applyingSwapId === swap.add.id ? "Swapping..." : "Swap"}
                     </Button>
                   </li>
                 ))}
