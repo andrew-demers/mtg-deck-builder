@@ -11,7 +11,14 @@ vi.mock("@/lib/prisma", () => ({
     card: {
       findMany: vi.fn(),
     },
+    deckCard: {
+      findMany: vi.fn(),
+    },
   },
+}));
+
+vi.mock("@/lib/card-prices", () => ({
+  refreshCardPrices: vi.fn(),
 }));
 
 vi.mock("@/lib/llm", () => ({
@@ -20,6 +27,7 @@ vi.mock("@/lib/llm", () => ({
 
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { refreshCardPrices } from "@/lib/card-prices";
 import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -352,15 +360,33 @@ describe("suggestCards", () => {
       await expect(suggestCards("deck_1", { budgetUsd: 0 })).rejects.toThrow(CardSuggestionError);
     });
 
-    it("picks the best combination of unowned cards that fits and keeps owned cards free", async () => {
+    const refreshMock = refreshCardPrices as unknown as ReturnType<typeof vi.fn>;
+    const deckCardFindManyMock = prisma.deckCard.findMany as unknown as ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      refreshMock.mockReset();
+      deckCardFindManyMock.mockReset();
+      deckCardFindManyMock.mockResolvedValue([]);
+    });
+
+    function unpriced(id: string, name: string) {
+      return card({ id, name, colorIdentity: ["W"], priceUsd: null });
+    }
+
+    it("prices the LLM's picks live, then picks the best combination that fits the budget", async () => {
       mockDeck([]);
       const owned = card({ id: "owned", name: "Owned Card", colorIdentity: ["W"] });
-      const big = card({ id: "big", name: "Big Card", colorIdentity: ["W"], priceUsd: 15 });
-      const b = card({ id: "b", name: "Cheap B", colorIdentity: ["W"], priceUsd: 10 });
-      const c = card({ id: "c", name: "Cheap C", colorIdentity: ["W"], priceUsd: 10 });
-      const d = card({ id: "d", name: "Cheap D", colorIdentity: ["W"], priceUsd: 10 });
+      const names = { big: "Big Card", b: "Cheap B", c: "Cheap C", d: "Cheap D" };
       collectionFindManyMock.mockResolvedValue([{ cardId: owned.id, card: owned, quantity: 1 }]);
-      cardFindManyMock.mockResolvedValue([big, b, c, d]);
+      cardFindManyMock
+        // catalog pool: nothing has a price yet
+        .mockResolvedValueOnce(Object.entries(names).map(([id, name]) => unpriced(id, name)))
+        // re-read after the live price lookup
+        .mockResolvedValueOnce(
+          Object.entries({ big: 15, b: 10, c: 10, d: 10 }).map(([id, priceUsd]) =>
+            card({ id, name: names[id as keyof typeof names], colorIdentity: ["W"], priceUsd }),
+          ),
+        );
       mockCompletion(
         ["Owned Card", "Big Card", "Cheap B", "Cheap C", "Cheap D"]
           .map((name) => `${name} :: Synergy :: Fits.`)
@@ -369,10 +395,50 @@ describe("suggestCards", () => {
 
       const result = await suggestCards("deck_1", { budgetUsd: 20 });
 
+      expect(refreshMock).toHaveBeenCalledWith(expect.arrayContaining(["big", "b", "c", "d"]));
       expect(result.map((s) => s.card.name)).toEqual(["Owned Card", "Cheap B", "Cheap C"]);
+      expect(result[1].card.priceUsd).toBe(10);
+    });
+
+    it("leaves owned cards that are in another deck out of the pool", async () => {
+      mockDeck([]);
+      const elsewhere = card({ id: "elsewhere", name: "Elsewhere", colorIdentity: ["W"] });
+      collectionFindManyMock.mockResolvedValue([
+        { cardId: elsewhere.id, card: elsewhere, quantity: 1 },
+      ]);
+      deckCardFindManyMock.mockResolvedValue([{ cardId: "elsewhere" }]);
+      cardFindManyMock.mockResolvedValue([]);
+      mockSuggestion("Elsewhere");
+
+      const result = await suggestCards("deck_1", { budgetUsd: 20 });
+
+      expect(result).toEqual([]);
       expect(cardFindManyMock).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.objectContaining({ priceUsd: { lte: 20 } }) }),
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { notIn: expect.arrayContaining(["elsewhere"]) } }),
+        }),
       );
+    });
+
+    it("drops picks whose price still can't be found", async () => {
+      mockDeck([]);
+      collectionFindManyMock.mockResolvedValue([]);
+      cardFindManyMock
+        .mockResolvedValueOnce([unpriced("mystery", "Mystery Card")])
+        .mockResolvedValueOnce([unpriced("mystery", "Mystery Card")]);
+      mockSuggestion("Mystery Card");
+
+      expect(await suggestCards("deck_1", { budgetUsd: 20 })).toEqual([]);
+    });
+
+    it("errors rather than ignoring the budget when prices can't be fetched", async () => {
+      mockDeck([]);
+      collectionFindManyMock.mockResolvedValue([]);
+      cardFindManyMock.mockResolvedValueOnce([unpriced("x", "Card X")]);
+      refreshMock.mockRejectedValue(new Error("403"));
+      mockSuggestion("Card X");
+
+      await expect(suggestCards("deck_1", { budgetUsd: 20 })).rejects.toThrow(CardSuggestionError);
     });
   });
 });
