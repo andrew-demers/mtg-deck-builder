@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Button from "@/components/button";
 import ManaCost from "@/components/mana-cost";
 import CardName from "@/components/card-name";
+import { createAndBuildDeck } from "@/lib/create-and-build-deck";
 
 const WIN_CONDITIONS = [
   "Combat damage",
@@ -125,39 +126,14 @@ export default function DeckWizardPage() {
     setIsCreating(true);
 
     try {
-      const createResponse = await fetch("/api/decks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: deckName.trim() || `${selectedCommander.name} Commander Deck`,
-          commanderCardId: selectedCommander.id,
-        }),
+      const result = await createAndBuildDeck({
+        name: deckName.trim() || `${selectedCommander.name} Commander Deck`,
+        commanderCardId: selectedCommander.id,
+        allowUnowned,
       });
-
-      if (!createResponse.ok) {
-        const data = (await createResponse.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong creating this deck.");
-        return;
-      }
-
-      const deck = (await createResponse.json()) as { id: string };
-
-      const buildResponse = await fetch(`/api/decks/${deck.id}/build`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowUnowned }),
-      });
-
-      if (!buildResponse.ok) {
-        const data = (await buildResponse.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Deck was created, but something went wrong filling in the rest of the cards.");
-        router.push(`/decks/${deck.id}`);
-        return;
-      }
-
-      router.push(`/decks/${deck.id}`);
-    } catch {
-      setError("Something went wrong creating this deck.");
+      router.push(`/decks/${result.deckId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Something went wrong creating this deck.");
     } finally {
       setIsCreating(false);
     }
