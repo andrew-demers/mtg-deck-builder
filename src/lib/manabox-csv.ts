@@ -88,6 +88,37 @@ function parseFoil(rawFoil: string | undefined): boolean {
   return rawFoil.toLowerCase().includes("foil");
 }
 
+const EXPORT_HEADER = ["Name", "Set code", "Scryfall ID", "Quantity", "Foil"];
+
+function escapeCsvField(field: string): string {
+  if (/[",\r\n]/.test(field)) {
+    return `"${field.replace(/"/g, '""')}"`;
+  }
+
+  return field;
+}
+
+/**
+ * Serializes rows back into a ManaBox-compatible CSV (the inverse of
+ * `parseManaBoxCsv`). The `Foil` column is written as "foil"/"normal" so a
+ * round trip through `parseManaBoxCsv` (which matches on a "foil" substring)
+ * reads it back correctly.
+ */
+export function formatManaBoxCsv(rows: ManaBoxRow[]): string {
+  const lines = [
+    EXPORT_HEADER,
+    ...rows.map((row) => [
+      row.name,
+      row.setCode ?? "",
+      row.scryfallId ?? "",
+      String(row.quantity),
+      row.foil ? "foil" : "normal",
+    ]),
+  ];
+
+  return lines.map((fields) => fields.map(escapeCsvField).join(",")).join("\r\n") + "\r\n";
+}
+
 export function parseManaBoxCsv(csvText: string): ManaBoxRow[] {
   const records = parse(csvText, {
     columns: normalizeHeader,

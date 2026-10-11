@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
+import {
+  isBasicLand,
+  REQUIRED_DECK_SIZE,
+  unionColorIdentity,
+  validateColorIdentity,
+} from "@/lib/commander-legality";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -30,7 +35,9 @@ export interface SuggestCardsOptions {
  * commander's color identity. Cards with zero remaining availability (fully
  * used already) are excluded from the owned pool, and cards already in the
  * deck are excluded from the catalog pool, so neither can be suggested
- * again.
+ * again. Both pools are pre-filtered to the commander's color identity
+ * before ever reaching the LLM, since a large off-color collection would
+ * otherwise crowd out legal candidates in the prompt.
  *
  * The LLM's suggestions are never trusted directly: each returned name is
  * matched case-insensitively against the offered pool, and every match is
@@ -91,10 +98,21 @@ export async function suggestCards(
     usedByCardId.set(deckCard.cardId, (usedByCardId.get(deckCard.cardId) ?? 0) + deckCard.quantity);
   }
 
+  const colorIdentity = unionColorIdentity(commanders);
+
   const remainingPool: Card[] = [];
   for (const [cardId, { card, quantity }] of ownedByCardId) {
     const used = usedByCardId.get(cardId) ?? 0;
-    if (quantity - used > 0) {
+    // Commander's singleton rule allows only one copy of any nonbasic card,
+    // so a card already in the deck can't be suggested again even if the
+    // player owns further copies (e.g. foil + non-foil). Basic lands are
+    // exempt and remain suggestible as long as unused copies are owned.
+    const hasRemainingCopies = isBasicLand(card) ? quantity - used > 0 : used === 0;
+    // Filtering to color identity here (rather than trusting the LLM's
+    // instructions) keeps a mostly off-color collection from crowding out
+    // legal candidates in the prompt and burning suggestion slots on cards
+    // that would just get rejected by validateColorIdentity below anyway.
+    if (hasRemainingCopies && validateColorIdentity(colorIdentity, [card])) {
       remainingPool.push(card);
     }
   }
@@ -103,7 +121,7 @@ export async function suggestCards(
   const pool = allowUnowned
     ? dedupeById([
         ...remainingPool,
-        ...(await findCatalogCardsInColorIdentity(unionColorIdentity(commanders), excludeIds)),
+        ...(await findCatalogCardsInColorIdentity(colorIdentity, excludeIds)),
       ])
     : remainingPool;
 
@@ -111,7 +129,17 @@ export async function suggestCards(
     return [];
   }
 
-  const completion = await getLlmProvider().complete(buildPrompt(commanders, pool, allowUnowned));
+  // When the deck isn't full yet, ask the LLM for enough suggestions to
+  // fill it; a full deck (e.g. reviewing for upgrades) falls back to a
+  // reasonable default count instead of asking for zero.
+  const DEFAULT_SUGGESTION_COUNT = 10;
+  const deckSize = deck.cards.reduce((sum, deckCard) => sum + deckCard.quantity, 0);
+  const neededToFillDeck = Math.max(REQUIRED_DECK_SIZE - deckSize, 0);
+  const requestCount = Math.min(pool.length, neededToFillDeck || DEFAULT_SUGGESTION_COUNT);
+
+  const completion = await getLlmProvider().complete(
+    buildPrompt(commanders, pool, allowUnowned, requestCount),
+  );
   const suggestions = parseSuggestions(completion);
 
   const cardsByName = new Map(pool.map((card) => [normalize(card.name), card]));
@@ -123,7 +151,7 @@ export async function suggestCards(
       continue; // hallucinated, or owned but with no remaining availability
     }
 
-    if (!validateColorIdentity(unionColorIdentity(commanders), [card])) {
+    if (!validateColorIdentity(colorIdentity, [card])) {
       continue; // outside the commander's color identity
     }
 
@@ -178,7 +206,12 @@ function parseSuggestions(completion: string): { name: string; tag: string; reas
     .filter((suggestion): suggestion is { name: string; tag: string; reason: string } => suggestion !== null);
 }
 
-function buildPrompt(commanders: Card[], pool: Card[], allowUnowned: boolean): string {
+function buildPrompt(
+  commanders: Card[],
+  pool: Card[],
+  allowUnowned: boolean,
+  requestCount: number,
+): string {
   const names = pool.map((card) => `- ${card.name}`).join("\n");
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const colorIdentity = unionColorIdentity(commanders);
@@ -190,7 +223,7 @@ function buildPrompt(commanders: Card[], pool: Card[], allowUnowned: boolean): s
     "You are suggesting additions to an existing Magic: The Gathering Commander/EDH deck.",
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
-    `Suggest cards to add to this deck from ${poolDescription}.`,
+    `Suggest exactly ${requestCount} card${requestCount === 1 ? "" : "s"} to add to this deck from ${poolDescription}.`,
     "Every suggestion must be within the commander's color identity.",
     "Respond with one suggestion per line in exactly this format and nothing else:",
     "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",

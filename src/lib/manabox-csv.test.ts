@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseManaBoxCsv } from "@/lib/manabox-csv";
+import { formatManaBoxCsv, parseManaBoxCsv } from "@/lib/manabox-csv";
 
 function readFixture(fileName: string): string {
   return readFileSync(path.join(__dirname, "__fixtures__", fileName), "utf-8");
@@ -98,5 +98,37 @@ describe("parseManaBoxCsv", () => {
         foil: true,
       },
     ]);
+  });
+});
+
+describe("formatManaBoxCsv", () => {
+  it("writes a header row plus one row per card", () => {
+    const csv = formatManaBoxCsv([
+      { name: "Sol Ring", setCode: "C21", scryfallId: "scry-sol-ring", quantity: 1, foil: true },
+      { name: "Grizzly Bears", setCode: null, scryfallId: null, quantity: 4, foil: false },
+    ]);
+
+    expect(csv).toBe(
+      "Name,Set code,Scryfall ID,Quantity,Foil\r\n" +
+        "Sol Ring,C21,scry-sol-ring,1,foil\r\n" +
+        "Grizzly Bears,,,4,normal\r\n",
+    );
+  });
+
+  it("quotes fields containing commas", () => {
+    const csv = formatManaBoxCsv([
+      { name: "Clear, the Mind", setCode: "MH2", scryfallId: "scry-clear", quantity: 2, foil: false },
+    ]);
+
+    expect(csv).toContain('"Clear, the Mind"');
+  });
+
+  it("round-trips through parseManaBoxCsv", () => {
+    const original = [
+      { name: "Atraxa, Praetors' Voice", setCode: "PDOM", scryfallId: "scry-atraxa", quantity: 1, foil: true },
+      { name: "Grizzly Bears", setCode: "LEA", scryfallId: "scry-grizzly", quantity: 4, foil: false },
+    ];
+
+    expect(parseManaBoxCsv(formatManaBoxCsv(original))).toEqual(original);
   });
 });

@@ -1,4 +1,4 @@
-const REQUIRED_DECK_SIZE = 100;
+export const REQUIRED_DECK_SIZE = 100;
 
 export interface SingletonCheckCard {
   cardId: string;

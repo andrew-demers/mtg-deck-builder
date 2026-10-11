@@ -148,6 +148,24 @@ describe("suggestCards", () => {
   });
 
   it("sums quantity across multiple CollectionEntry rows for the same card (e.g. foil + non-foil)", async () => {
+    const owned = card({
+      id: "owned_twice",
+      name: "Owned Twice Card",
+      colorIdentity: ["W"],
+    });
+    mockDeck([]);
+    collectionFindManyMock.mockResolvedValue([
+      { cardId: owned.id, card: owned, quantity: 1 },
+      { cardId: owned.id, card: owned, quantity: 1 },
+    ]);
+    mockSuggestion(owned.name as string);
+
+    const result = await suggestCards("deck_1");
+
+    expect(result).toEqual([{ card: owned, tag: "Synergy", reason: "Fits the deck's plan." }]);
+  });
+
+  it("does not re-suggest a nonbasic card already in the deck even when further copies are owned (singleton rule)", async () => {
     const partiallyUsed = card({
       id: "partially_used",
       name: "Partially Used Card",
@@ -162,8 +180,26 @@ describe("suggestCards", () => {
 
     const result = await suggestCards("deck_1");
 
+    expect(result).toEqual([]);
+  });
+
+  it("keeps suggesting a basic land already in the deck as long as unused copies are owned", async () => {
+    const basicLand = card({
+      id: "basic_land",
+      name: "Forest",
+      colorIdentity: ["G"],
+      type: "Basic Land — Forest",
+    });
+    mockDeck([{ cardId: basicLand.id, quantity: 1, isCommander: false }]);
+    collectionFindManyMock.mockResolvedValue([
+      { cardId: basicLand.id, card: basicLand, quantity: 3 },
+    ]);
+    mockSuggestion(basicLand.name as string, "Land", "Keeps land drops consistent.");
+
+    const result = await suggestCards("deck_1");
+
     expect(result).toEqual([
-      { card: partiallyUsed, tag: "Synergy", reason: "Fits the deck's plan." },
+      { card: basicLand, tag: "Land", reason: "Keeps land drops consistent." },
     ]);
   });
 
@@ -264,5 +300,51 @@ describe("suggestCards", () => {
 
     expect(result).toEqual([]);
     expect(getLlmProviderMock).not.toHaveBeenCalled();
+  });
+
+  it("asks the LLM for enough suggestions to fill the remaining deck slots", async () => {
+    const filler = card({ id: "filler", name: "Filler Card", colorIdentity: ["W"] });
+    // 95 cards already in the deck (via one bulky DeckCard row) leaves 5 slots to fill.
+    mockDeck([{ cardId: "bulk", quantity: 95, isCommander: false, card: filler }]);
+    collectionFindManyMock.mockResolvedValue([{ cardId: filler.id, card: filler, quantity: 1 }]);
+    const completeMock = vi.fn().mockResolvedValue(`${filler.name} :: Synergy :: Fits the plan.`);
+    getLlmProviderMock.mockReturnValue({ complete: completeMock });
+
+    await suggestCards("deck_1");
+
+    const prompt = completeMock.mock.calls[0][0] as string;
+    expect(prompt).toContain("Suggest exactly 1 card ");
+  });
+
+  it("caps the requested suggestion count at the available pool size", async () => {
+    const filler = card({ id: "filler", name: "Filler Card", colorIdentity: ["W"] });
+    mockDeck([]); // 0 cards in the deck leaves 100 slots to fill, but the pool only has 1 card.
+    collectionFindManyMock.mockResolvedValue([{ cardId: filler.id, card: filler, quantity: 1 }]);
+    const completeMock = vi.fn().mockResolvedValue(`${filler.name} :: Synergy :: Fits the plan.`);
+    getLlmProviderMock.mockReturnValue({ complete: completeMock });
+
+    await suggestCards("deck_1");
+
+    const prompt = completeMock.mock.calls[0][0] as string;
+    expect(prompt).toContain("Suggest exactly 1 card ");
+  });
+
+  it("falls back to a default suggestion count when the deck is already full", async () => {
+    const filler = card({ id: "filler", name: "Filler Card", colorIdentity: ["W"] });
+    mockDeck([{ cardId: "bulk", quantity: 100, isCommander: false, card: filler }]);
+    collectionFindManyMock.mockResolvedValue(
+      Array.from({ length: 12 }, (_, i) => ({
+        cardId: `owned_${i}`,
+        card: card({ id: `owned_${i}`, name: `Owned Card ${i}`, colorIdentity: ["W"] }),
+        quantity: 1,
+      })),
+    );
+    const completeMock = vi.fn().mockResolvedValue("Owned Card 0 :: Synergy :: Fits the plan.");
+    getLlmProviderMock.mockReturnValue({ complete: completeMock });
+
+    await suggestCards("deck_1");
+
+    const prompt = completeMock.mock.calls[0][0] as string;
+    expect(prompt).toContain("Suggest exactly 10 cards ");
   });
 });
