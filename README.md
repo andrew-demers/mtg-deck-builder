@@ -26,6 +26,15 @@ This is the first vertical slice: account signup/login, ManaBox CSV import, card
    ```
    App runs at http://localhost:3000.
 
+### Importing from ManaBox
+
+In ManaBox, export your collection (all binders at once works) and upload the CSV on the **Import** page.
+
+- Rows for the same card and finish (normal vs foil) are added together, even across different printings and binders.
+- Token rows (set names ending in "Tokens") are skipped, since tokens aren't in the card catalog.
+- Re-importing a file replaces the stored quantity for each card instead of adding to it, so you can re-export and re-import as your collection changes. Unmatched names are updated in place rather than duplicated.
+- Tick **Replace my collection** to also remove owned cards that are no longer in the file (decks are not affected). It does nothing if the file matched no cards at all.
+
 ### Testing
 
 ```bash
