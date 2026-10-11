@@ -85,6 +85,8 @@ export default function DeckPage() {
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
+  const [isKeepingOwned, setIsKeepingOwned] = useState(false);
+  const [keepOwnedNotice, setKeepOwnedNotice] = useState<string | null>(null);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
@@ -252,6 +254,46 @@ export default function DeckPage() {
       setError("Something went wrong refreshing prices.");
     } finally {
       setIsRefreshingPrices(false);
+    }
+  }
+
+  async function handleKeepOwnedOnly() {
+    if (
+      !window.confirm(
+        "Remove every card you don't own, and every card already in another deck, from this deck? Commanders and basic lands are kept.",
+      )
+    ) {
+      return;
+    }
+
+    setError(null);
+    setKeepOwnedNotice(null);
+    setIsKeepingOwned(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/keep-owned`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong updating this deck.");
+        return;
+      }
+
+      const { removed } = (await response.json()) as { removed: { name: string }[] };
+      setKeepOwnedNotice(
+        removed.length === 0
+          ? "Every card in this deck is already owned and unused elsewhere."
+          : `Removed ${removed.length} card${removed.length === 1 ? "" : "s"}: ${removed.map((card) => card.name).join(", ")}`,
+      );
+
+      const deckResponse = await fetch(`/api/decks/${deckId}`);
+      if (deckResponse.ok) {
+        setDeck((await deckResponse.json()) as DeckData);
+      }
+    } catch {
+      setError("Something went wrong updating this deck.");
+    } finally {
+      setIsKeepingOwned(false);
     }
   }
 
@@ -715,15 +757,26 @@ export default function DeckPage() {
                 <span className="text-muted"> ({deckPrice.unpricedCount} cards unpriced)</span>
               ) : null}
             </p>
-            <Button
-              variant="secondary"
-              className="px-4 py-1 text-xs"
-              disabled={isRefreshingPrices}
-              onClick={handleRefreshPrices}
-            >
-              {isRefreshingPrices ? "Refreshing..." : "Refresh prices"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                className="px-4 py-1 text-xs"
+                disabled={isKeepingOwned}
+                onClick={handleKeepOwnedOnly}
+              >
+                {isKeepingOwned ? "Updating..." : "Update deck with only owned cards"}
+              </Button>
+              <Button
+                variant="secondary"
+                className="px-4 py-1 text-xs"
+                disabled={isRefreshingPrices}
+                onClick={handleRefreshPrices}
+              >
+                {isRefreshingPrices ? "Refreshing..." : "Refresh prices"}
+              </Button>
+            </div>
           </div>
+          {keepOwnedNotice ? <p className="text-sm text-muted">{keepOwnedNotice}</p> : null}
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border">
