@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { DeckVersionError, listDeckVersions, saveDeckVersion } from "@/lib/deck-version";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * GET /api/decks/[id]/versions - session-scoped. Returns the deck's saved
@@ -81,6 +82,6 @@ export async function POST(
     if (error instanceof DeckVersionError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { critiqueAndGradeDeck, DeckCritiqueError } from "@/lib/deck-critique";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/critique - session-scoped. Asks the LLM to critique a
@@ -53,7 +54,7 @@ export async function POST(
     if (error instanceof DeckCritiqueError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 
   const updatedDeck = await prisma.deck.update({

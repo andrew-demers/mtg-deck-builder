@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { suggestReplacements, CardReplacementError } from "@/lib/card-replacement";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 interface ReplaceSuggestionsBody {
   cardIds?: unknown;
@@ -57,6 +58,6 @@ export async function POST(
     if (error instanceof CardReplacementError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

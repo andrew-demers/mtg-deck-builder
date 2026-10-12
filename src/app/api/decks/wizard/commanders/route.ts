@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { suggestCommandersForPreferences, DeckWizardError } from "@/lib/deck-wizard";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 interface WizardCommandersBody {
   winCondition?: string;
@@ -40,6 +41,6 @@ export async function POST(request: Request): Promise<Response> {
     if (error instanceof DeckWizardError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

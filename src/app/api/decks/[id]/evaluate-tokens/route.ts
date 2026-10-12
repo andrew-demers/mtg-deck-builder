@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { evaluateTokens, TokenEvaluationError } from "@/lib/token-evaluation";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/evaluate-tokens - session-scoped. Asks the LLM to go
@@ -40,6 +41,6 @@ export async function POST(
     if (error instanceof TokenEvaluationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

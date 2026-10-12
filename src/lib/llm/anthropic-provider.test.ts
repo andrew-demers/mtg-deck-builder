@@ -2,16 +2,30 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const createMock = vi.fn();
 
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: vi.fn().mockImplementation(function AnthropicClient(this: {
+const { FakeApiError } = vi.hoisted(() => ({
+  FakeApiError: class FakeApiError extends Error {
+    constructor(
+      public status: number,
+      public error: unknown,
+      message: string,
+    ) {
+      super(message);
+    }
+  },
+}));
+
+vi.mock("@anthropic-ai/sdk", () => {
+  const AnthropicClient = vi.fn().mockImplementation(function AnthropicClient(this: {
     messages: { create: typeof createMock };
   }) {
     this.messages = { create: createMock };
-  }),
-}));
+  });
+  return { default: Object.assign(AnthropicClient, { APIError: FakeApiError }) };
+});
 
 import Anthropic from "@anthropic-ai/sdk";
 import { AnthropicProvider } from "@/lib/llm/anthropic-provider";
+import { LlmProviderError } from "@/lib/llm/provider";
 
 const AnthropicMock = Anthropic as unknown as ReturnType<typeof vi.fn>;
 
@@ -73,13 +87,25 @@ describe("AnthropicProvider", () => {
     );
   });
 
-  it("surfaces errors thrown by the SDK client", async () => {
-    createMock.mockRejectedValue(new Error("Request failed with status 500"));
+  it("wraps non-API client failures as LlmProviderError", async () => {
+    createMock.mockRejectedValue(new Error("socket hang up"));
 
     const provider = new AnthropicProvider();
+    const result = provider.complete("hello");
 
-    await expect(provider.complete("hello")).rejects.toThrow(
-      "Request failed with status 500",
+    await expect(result).rejects.toBeInstanceOf(LlmProviderError);
+    await expect(result).rejects.toThrow("socket hang up");
+  });
+
+  it("surfaces the API's own message, e.g. a low credit balance", async () => {
+    createMock.mockRejectedValue(
+      new FakeApiError(400, { error: { message: "Your credit balance is too low" } }, "400 {...}"),
     );
+
+    const provider = new AnthropicProvider();
+    const result = provider.complete("hello");
+
+    await expect(result).rejects.toBeInstanceOf(LlmProviderError);
+    await expect(result).rejects.toThrow("Anthropic API error (400): Your credit balance is too low");
   });
 });
