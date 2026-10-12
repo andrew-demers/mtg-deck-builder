@@ -82,6 +82,22 @@ describe("buildGradePrompt", () => {
   });
 });
 
+describe("buildGradePrompt commander text", () => {
+  it("includes the commander's rules text when provided", () => {
+    const prompt = buildGradePrompt({
+      goal: null,
+      commanderName: "Szarel, Genesis Shepherd",
+      commanderText: "Flying\nYou may play lands from your graveyard.",
+      cards: [],
+    });
+    expect(prompt).toContain("You may play lands from your graveyard.");
+  });
+
+  it("omits the commander text block when absent", () => {
+    expect(buildGradePrompt({ goal: null, commanderName: "c", cards: [] })).not.toContain("Commander card text");
+  });
+});
+
 describe("letterGrade", () => {
   it("maps scores to letters", () => {
     expect([100, 93, 88, 80, 72, 61, 10].map(letterGrade)).toEqual(["A+", "A", "B+", "B-", "C-", "D", "F"]);

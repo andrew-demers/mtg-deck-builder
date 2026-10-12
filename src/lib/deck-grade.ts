@@ -43,6 +43,8 @@ export interface GradeInput {
   /** What the deck should achieve. When null, the model works out the win condition itself and grades against it. */
   goal: string | null;
   commanderName: string;
+  /** The commander's type line and rules text. */
+  commanderText?: string | null;
   /** Non-commander cards, one entry per card name with its quantity. */
   cards: { name: string; quantity: number }[];
   previous?: PreviousGrade | null;
@@ -67,7 +69,7 @@ export async function gradeDeck(input: GradeInput): Promise<DeckGrade> {
 }
 
 export function buildGradePrompt(input: GradeInput): string {
-  const { goal, commanderName, cards, previous, withCritique } = input;
+  const { goal, commanderName, commanderText, cards, previous, withCritique } = input;
   const cardLines = cards
     .map((card) => `- ${card.name}${card.quantity > 1 ? ` x${card.quantity}` : ""}`)
     .join("\n");
@@ -75,6 +77,12 @@ export function buildGradePrompt(input: GradeInput): string {
   return [
     "You are grading a Magic: The Gathering Commander/EDH deck on how well it is built to achieve its owner's goal.",
     `Commander: ${commanderName}`,
+    ...(commanderText
+      ? [
+          "Commander card text (authoritative - rely on this, not on your memory of the card, and do not attribute abilities to it that are not written here):",
+          commanderText,
+        ]
+      : []),
     ...(goal ? [`Goal: ${goal}`] : []),
     "",
     "The rest of the deck:",

@@ -16,6 +16,8 @@ export interface SnapshotCard {
 
 export interface DeckSnapshot {
   commanderName: string | null;
+  /** The commander's type line and rules text, so the model reads what the card does instead of recalling it. */
+  commanderText?: string | null;
   cards: SnapshotCard[];
 }
 
@@ -94,13 +96,16 @@ export function hasChanges(changes: DeckVersionChanges): boolean {
 }
 
 type DeckWithCards = {
-  commanderCard: { name: string } | null;
+  commanderCard: { name: string; type?: string; oracleText?: string | null } | null;
   cards: { cardId: string; quantity: number; isCommander: boolean; card: { name: string } }[];
 };
 
 export function snapshotOf(source: DeckWithCards): DeckSnapshot {
   return {
     commanderName: source.commanderCard?.name ?? null,
+    commanderText: source.commanderCard
+      ? [source.commanderCard.type, source.commanderCard.oracleText].filter(Boolean).join("\n") || null
+      : null,
     cards: source.cards.map((deckCard) => ({
       cardId: deckCard.cardId,
       name: deckCard.card.name,
@@ -180,6 +185,7 @@ export function buildGradeInput(
   return {
     goal,
     commanderName: snapshot.commanderName ?? "none",
+    commanderText: snapshot.commanderText ?? null,
     cards: snapshot.cards.filter((card) => !card.isCommander),
     previous:
       comparable?.grade && changes
