@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { DeckVersionError, gradeCurrentDeck } from "@/lib/deck-version";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/grade - session-scoped. Grades the deck as it is now,
@@ -41,7 +42,7 @@ export async function POST(
     if (error instanceof DeckVersionError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 
   const updatedDeck = await prisma.deck.update({

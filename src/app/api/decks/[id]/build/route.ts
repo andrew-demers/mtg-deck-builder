@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { buildDeck, DeckBuildError } from "@/lib/deck-builder";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 interface BuildDeckBody {
   allowUnowned?: boolean;
@@ -63,7 +64,7 @@ export async function POST(
     if (error instanceof DeckBuildError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 
   await prisma.deckCard.deleteMany({

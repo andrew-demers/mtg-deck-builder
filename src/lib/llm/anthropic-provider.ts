@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { LlmProvider } from "@/lib/llm/provider";
+import { LlmProviderError, type LlmProvider } from "@/lib/llm/provider";
 
 // Deck features only need single-turn completions, but some (a 99-card deck
 // list, up to 8 commander suggestions with reasons) can run long, so
@@ -20,26 +20,42 @@ export class AnthropicProvider implements LlmProvider {
   }
 
   async complete(prompt: string): Promise<string> {
-    const response = await this.client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      // Claude 5-family models default to adaptive extended thinking, which
-      // can consume the entire max_tokens budget on a "thinking" block and
-      // leave no room for an actual text answer (surfaced as a response
-      // with no text content block at all). This provider is a plain
-      // text-in/text-out completion - deck features have no use for a
-      // reasoning trace - so thinking is explicitly turned off.
-      thinking: { type: "disabled" },
-      messages: [{ role: "user", content: prompt }],
-    });
+    let response: Anthropic.Message;
+    try {
+      response = await this.client.messages.create({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        // Claude 5-family models default to adaptive extended thinking, which
+        // can consume the entire max_tokens budget on a "thinking" block and
+        // leave no room for an actual text answer (surfaced as a response
+        // with no text content block at all). This provider is a plain
+        // text-in/text-out completion - deck features have no use for a
+        // reasoning trace - so thinking is explicitly turned off.
+        thinking: { type: "disabled" },
+        messages: [{ role: "user", content: prompt }],
+      });
+    } catch (error) {
+      if (error instanceof Anthropic.APIError) {
+        const detail = (
+          error.error as { error?: { message?: string } } | undefined
+        )?.error?.message;
+        throw new LlmProviderError(
+          `Anthropic API error (${error.status ?? "no status"}): ${detail ?? error.message}`,
+        );
+      }
+      throw new LlmProviderError(
+        `Could not reach the Anthropic API: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     const textBlock = response.content.find(
       (block): block is Anthropic.TextBlock => block.type === "text",
     );
 
     if (!textBlock) {
-      const blockTypes = response.content.map((block) => block.type).join(", ") || "none";
-      throw new Error(
+      const blockTypes =
+        response.content.map((block) => block.type).join(", ") || "none";
+      throw new LlmProviderError(
         `Anthropic response did not contain a text block (stop_reason: ${response.stop_reason}, content block types: ${blockTypes})`,
       );
     }

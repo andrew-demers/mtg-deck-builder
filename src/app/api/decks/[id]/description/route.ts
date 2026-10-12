@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { describeDeck, DeckDescriptionError } from "@/lib/deck-description";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/description - session-scoped. Asks the LLM to
@@ -52,7 +53,7 @@ export async function POST(
     if (error instanceof DeckDescriptionError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 
   const updatedDeck = await prisma.deck.update({

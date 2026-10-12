@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 interface SuggestCardsBody {
   allowUnowned?: boolean;
@@ -56,6 +57,6 @@ export async function POST(
     if (error instanceof CardSuggestionError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

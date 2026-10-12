@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { DeckGoalError, draftDeckGoal } from "@/lib/deck-goal";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/goal/draft - session-scoped. Asks the LLM to draft the
@@ -39,6 +40,6 @@ export async function POST(
     if (error instanceof DeckGoalError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

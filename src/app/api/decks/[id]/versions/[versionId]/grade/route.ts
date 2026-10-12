@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { DeckVersionError, gradeDeckVersion } from "@/lib/deck-version";
+import { llmErrorResponse } from "@/lib/llm/error-response";
 
 /**
  * POST /api/decks/[id]/versions/[versionId]/grade - session-scoped. Grades a
@@ -40,6 +41,6 @@ export async function POST(
       const status = error.message === "Version not found" ? 404 : 400;
       return NextResponse.json({ error: error.message }, { status });
     }
-    throw error;
+    return llmErrorResponse(error);
   }
 }

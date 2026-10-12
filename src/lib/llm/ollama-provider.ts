@@ -1,4 +1,4 @@
-import type { LlmProvider } from "@/lib/llm/provider";
+import { LlmProviderError, type LlmProvider } from "@/lib/llm/provider";
 
 const DEFAULT_BASE_URL = "http://localhost:11434";
 
@@ -26,15 +26,20 @@ export class OllamaProvider implements LlmProvider {
   }
 
   async complete(prompt: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: this.model, prompt, stream: false }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: this.model, prompt, stream: false }),
+      });
+    } catch (error) {
+      throw new LlmProviderError(`Could not reach Ollama: ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(
+      throw new LlmProviderError(
         `Ollama request failed with status ${response.status}: ${body}`,
       );
     }
