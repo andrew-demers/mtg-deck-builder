@@ -1,4 +1,5 @@
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const headingClassName = "mt-3 font-sans text-sm font-bold normal-case text-foreground first:mt-0";
 
@@ -11,6 +12,15 @@ const components: Components = {
   ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
   ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
   li: ({ children }) => <li className="mb-1 last:mb-0">{children}</li>,
+  table: ({ children }) => (
+    <div className="mb-2 overflow-x-auto last:mb-0">
+      <table className="w-full border-collapse text-left text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border-b border-border px-2 py-1 font-semibold text-foreground">{children}</th>
+  ),
+  td: ({ children }) => <td className="border-b border-border px-2 py-1 align-top">{children}</td>,
   code: ({ children }) => (
     <code className="rounded border border-border bg-surface px-1 py-0.5 text-xs">{children}</code>
   ),
@@ -25,7 +35,7 @@ const components: Components = {
 export default function Markdown({ children }: { children: string }) {
   return (
     <div className="text-sm text-muted">
-      <ReactMarkdown components={components}>{children}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>{children}</ReactMarkdown>
     </div>
   );
 }
