@@ -13,6 +13,12 @@ vi.mock("@/lib/prisma", () => ({
     deckCard: {
       deleteMany: vi.fn(),
     },
+    deckVersion: {
+      deleteMany: vi.fn(),
+    },
+    deckVersionCard: {
+      deleteMany: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }));
@@ -25,6 +31,8 @@ const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const findUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckDeleteMock = prisma.deck.delete as unknown as ReturnType<typeof vi.fn>;
 const deckCardDeleteManyMock = prisma.deckCard.deleteMany as unknown as ReturnType<typeof vi.fn>;
+const versionDeleteManyMock = prisma.deckVersion.deleteMany as unknown as ReturnType<typeof vi.fn>;
+const versionCardDeleteManyMock = prisma.deckVersionCard.deleteMany as unknown as ReturnType<typeof vi.fn>;
 const transactionMock = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
 
 function buildRequest(): Request {
@@ -117,6 +125,8 @@ describe("DELETE /api/decks/[id]", () => {
     findUniqueMock.mockReset();
     deckDeleteMock.mockReset();
     deckCardDeleteManyMock.mockReset();
+    versionDeleteManyMock.mockReset();
+    versionCardDeleteManyMock.mockReset();
     transactionMock.mockReset();
   });
 
@@ -149,7 +159,7 @@ describe("DELETE /api/decks/[id]", () => {
     expect(transactionMock).not.toHaveBeenCalled();
   });
 
-  it("deletes the deck's DeckCards and the deck in a transaction", async () => {
+  it("deletes the deck's versions, DeckCards, and the deck in a transaction", async () => {
     authMock.mockResolvedValue({ user: { id: "user_1" } });
     findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
     transactionMock.mockResolvedValue(undefined);
@@ -158,7 +168,9 @@ describe("DELETE /api/decks/[id]", () => {
 
     expect(response.status).toBe(204);
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    expect(transactionMock.mock.calls[0][0]).toHaveLength(2);
+    expect(transactionMock.mock.calls[0][0]).toHaveLength(4);
+    expect(versionCardDeleteManyMock).toHaveBeenCalledWith({ where: { version: { deckId: "deck_1" } } });
+    expect(versionDeleteManyMock).toHaveBeenCalledWith({ where: { deckId: "deck_1" } });
     expect(deckCardDeleteManyMock).toHaveBeenCalledWith({ where: { deckId: "deck_1" } });
     expect(deckDeleteMock).toHaveBeenCalledWith({ where: { id: "deck_1" } });
   });
