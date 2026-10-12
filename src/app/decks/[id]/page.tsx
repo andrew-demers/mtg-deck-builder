@@ -9,7 +9,7 @@ import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
 import Markdown from "@/components/markdown";
 import DeckVersions from "@/components/deck-versions";
-import GradePanel, { type VersionGrade } from "@/components/grade-panel";
+import type { VersionGrade } from "@/components/grade-panel";
 import { deckSignature } from "@/lib/deck-signature";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
@@ -1149,24 +1149,6 @@ export default function DeckPage() {
                 No deck goal set, so the critique works out the deck&apos;s win condition and grades against that. Set a
                 goal in the version history above to grade against your own.
               </p>
-            ) : null}
-            {deck.gradeScore !== null && deck.gradeGoal && deck.gradeBreakdown ? (
-              <>
-                {deck.gradeSignature !== deckSignature(deck.commanderCardId, deck.cards) ||
-                deck.goal?.trim() && deck.gradeGoal !== deck.goal.trim() ? (
-                  <p className="text-xs text-muted">
-                    This grade is from an earlier version of the deck or goal. Request a new critique to refresh it.
-                  </p>
-                ) : null}
-                <GradePanel
-                  grade={{
-                    score: deck.gradeScore,
-                    goal: deck.gradeGoal,
-                    breakdown: deck.gradeBreakdown,
-                    summary: deck.gradeSummary ?? "",
-                  }}
-                />
-              </>
             ) : null}
             {deck.critique ? <Markdown>{deck.critique}</Markdown> : null}
           </div>
