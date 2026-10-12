@@ -47,6 +47,8 @@ model Card {
   collectionEntries   CollectionEntry[]
   decksAsCommander    Deck[]
   deckCards           DeckCard[]
+  deckVersionCards    DeckVersionCard[]
+  versionsAsCommander DeckVersion[]
 }
 
 model CollectionEntry {
@@ -79,17 +81,18 @@ model UnmatchedImportRow {
 }
 
 model Deck {
-  id              String     @id @default(cuid())
+  id              String        @id @default(cuid())
   userId          String
-  user            User       @relation(fields: [userId], references: [id])
+  user            User          @relation(fields: [userId], references: [id])
   name            String
   commanderCardId String?
-  commanderCard   Card?      @relation(fields: [commanderCardId], references: [id])
+  commanderCard   Card?         @relation(fields: [commanderCardId], references: [id])
   critique        String?
   description     String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   cards           DeckCard[]
+  versions        DeckVersion[]
 }
 
 model DeckCard {
@@ -104,4 +107,32 @@ model DeckCard {
   updatedAt   DateTime @updatedAt
 
   @@unique([deckId, cardId])
+}
+
+/// A saved snapshot of a deck, like a commit: `description` says what changed
+/// since the previous version. `number` counts up per deck from 1.
+model DeckVersion {
+  id              String            @id @default(cuid())
+  deckId          String
+  deck            Deck              @relation(fields: [deckId], references: [id])
+  number          Int
+  description     String
+  commanderCardId String?
+  commanderCard   Card?             @relation(fields: [commanderCardId], references: [id])
+  createdAt       DateTime          @default(now())
+  cards           DeckVersionCard[]
+
+  @@unique([deckId, number])
+}
+
+model DeckVersionCard {
+  id          String      @id @default(cuid())
+  versionId   String
+  version     DeckVersion @relation(fields: [versionId], references: [id])
+  cardId      String
+  card        Card        @relation(fields: [cardId], references: [id])
+  quantity    Int
+  isCommander Boolean     @default(false)
+
+  @@unique([versionId, cardId])
 }

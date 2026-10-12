@@ -41,10 +41,10 @@ export async function GET(
 }
 
 /**
- * DELETE /api/decks/[id] - session-scoped. Deletes the deck and its
- * DeckCards (DeckCard.deckId is ON DELETE RESTRICT, so the cards must be
- * removed first). 404 if the deck doesn't exist, 403 if it belongs to a
- * different user.
+ * DELETE /api/decks/[id] - session-scoped. Deletes the deck, its DeckCards,
+ * and its saved versions (the foreign keys are ON DELETE RESTRICT, so
+ * children must be removed first). 404 if the deck doesn't exist, 403 if it
+ * belongs to a different user.
  */
 export async function DELETE(
   _request: Request,
@@ -70,6 +70,8 @@ export async function DELETE(
   }
 
   await prisma.$transaction([
+    prisma.deckVersionCard.deleteMany({ where: { version: { deckId: id } } }),
+    prisma.deckVersion.deleteMany({ where: { deckId: id } }),
     prisma.deckCard.deleteMany({ where: { deckId: id } }),
     prisma.deck.delete({ where: { id } }),
   ]);

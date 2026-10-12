@@ -8,6 +8,7 @@ import ColorIdentityPips from "@/components/color-identity";
 import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
 import Markdown from "@/components/markdown";
+import DeckVersions from "@/components/deck-versions";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { isCommanderEligible } from "@/lib/commander-eligibility";
@@ -1031,6 +1032,8 @@ export default function DeckPage() {
             </div>
             {deck.description ? <Markdown>{deck.description}</Markdown> : null}
           </div>
+
+          <DeckVersions deckId={deckId} onRestored={(restored) => setDeck(restored as DeckData)} />
 
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
