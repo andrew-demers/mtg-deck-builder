@@ -21,6 +21,10 @@ vi.mock("@/lib/budget-candidates", () => ({
   findBudgetCandidates: vi.fn(),
 }));
 
+vi.mock("@/lib/card-prices", () => ({
+  refreshCardPrices: vi.fn(),
+}));
+
 vi.mock("@/lib/llm", () => ({
   getLlmProvider: vi.fn(),
 }));
@@ -28,6 +32,7 @@ vi.mock("@/lib/llm", () => ({
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
+import { refreshCardPrices } from "@/lib/card-prices";
 import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -35,6 +40,7 @@ const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as Ret
   typeof vi.fn
 >;
 const cardFindManyMock = prisma.card.findMany as unknown as ReturnType<typeof vi.fn>;
+const refreshPricesMock = refreshCardPrices as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
 
 function card(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -91,6 +97,36 @@ describe("suggestCards", () => {
     collectionFindManyMock.mockReset();
     cardFindManyMock.mockReset();
     getLlmProviderMock.mockReset();
+    refreshPricesMock.mockReset();
+    refreshPricesMock.mockResolvedValue(0);
+  });
+
+  describe("price freshness", () => {
+    it("refreshes prices for suggested cards and returns the updated cards", async () => {
+      mockDeck([]);
+      const owned = card({ id: "a", name: "Card A", colorIdentity: ["W"], priceUsd: null });
+      collectionFindManyMock.mockResolvedValue([{ cardId: "a", card: owned, quantity: 1 }]);
+      mockSuggestion("Card A");
+      refreshPricesMock.mockResolvedValue(1);
+      cardFindManyMock.mockResolvedValue([{ ...owned, priceUsd: 3.5 }]);
+
+      const result = await suggestCards("deck_1", { allowUnowned: false });
+
+      expect(refreshPricesMock).toHaveBeenCalledWith(["a"]);
+      expect(result[0].card.priceUsd).toBe(3.5);
+    });
+
+    it("still returns suggestions when Scryfall can't be reached", async () => {
+      mockDeck([]);
+      const owned = card({ id: "a", name: "Card A", colorIdentity: ["W"], priceUsd: null });
+      collectionFindManyMock.mockResolvedValue([{ cardId: "a", card: owned, quantity: 1 }]);
+      mockSuggestion("Card A");
+      refreshPricesMock.mockRejectedValue(new Error("403"));
+
+      const result = await suggestCards("deck_1", { allowUnowned: false });
+
+      expect(result.map((r) => r.card.id)).toEqual(["a"]);
+    });
   });
 
   it("throws when the deck does not exist", async () => {
