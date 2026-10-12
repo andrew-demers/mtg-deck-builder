@@ -118,4 +118,10 @@ describe("parseGradeAndCritique", () => {
     expect(buildGradePrompt({ ...base, withCritique: true })).toContain(CRITIQUE_MARKER);
     expect(buildGradePrompt(base)).not.toContain(CRITIQUE_MARKER);
   });
+
+  it("asks the critique to open with a win condition section", () => {
+    const prompt = buildGradePrompt({ goal: "g", commanderName: "c", cards: [], withCritique: true });
+
+    expect(prompt).toContain('"## Win condition"');
+  });
 });
