@@ -48,7 +48,7 @@ export async function POST(
 
   try {
     const cards = await suggestCards(id, {
-      allowUnowned: body?.allowUnowned ?? false,
+      allowUnowned: body?.allowUnowned ?? true,
       budgetUsd: typeof body?.budgetUsd === "number" ? body.budgetUsd : undefined,
     });
     return NextResponse.json(cards, { status: 200 });

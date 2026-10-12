@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "sync-cards": "tsx scripts/sync-cards.ts",
-    "sync-prices": "tsx scripts/sync-prices.ts"
+    "sync-prices": "tsx scripts/sync-prices.ts",
+    "seed-dev": "tsx scripts/seed-dev.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

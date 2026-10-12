@@ -73,7 +73,7 @@ function mockSuggestion(name: string, tag = "Synergy", reason = "Fits the deck's
   mockCompletion(`${name} :: ${tag} :: ${reason}`);
 }
 
-function mockDeck(deckCards: Record<string, unknown>[]) {
+function mockDeck(deckCards: Record<string, unknown>[], critique: string | null = null) {
   deckFindUniqueMock.mockResolvedValue({
     id: "deck_1",
     userId: "user_1",
@@ -81,6 +81,7 @@ function mockDeck(deckCards: Record<string, unknown>[]) {
     commanderCardId: commander.id,
     commanderCard: commander,
     cards: deckCards,
+    critique,
   });
 }
 
@@ -95,7 +96,7 @@ describe("suggestCards", () => {
   it("throws when the deck does not exist", async () => {
     deckFindUniqueMock.mockResolvedValue(null);
 
-    await expect(suggestCards("deck_1")).rejects.toThrow(CardSuggestionError);
+    await expect(suggestCards("deck_1", { allowUnowned: false })).rejects.toThrow(CardSuggestionError);
   });
 
   it("throws when the deck has no commander set", async () => {
@@ -107,7 +108,7 @@ describe("suggestCards", () => {
       cards: [],
     });
 
-    await expect(suggestCards("deck_1")).rejects.toThrow(CardSuggestionError);
+    await expect(suggestCards("deck_1", { allowUnowned: false })).rejects.toThrow(CardSuggestionError);
   });
 
   it("filters out an off-color owned suggestion", async () => {
@@ -122,7 +123,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(offColor.name as string);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([]);
   });
@@ -135,7 +136,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(usedUp.name as string);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([]);
   });
@@ -148,7 +149,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(validCard.name as string, "Ramp", "Helps ramp into the commander's high cost.");
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
       { card: validCard, tag: "Ramp", reason: "Helps ramp into the commander's high cost." },
@@ -168,7 +169,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(owned.name as string);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([{ card: owned, tag: "Synergy", reason: "Fits the deck's plan." }]);
   });
@@ -186,7 +187,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(partiallyUsed.name as string);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([]);
   });
@@ -204,7 +205,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(basicLand.name as string, "Land", "Keeps land drops consistent.");
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
       { card: basicLand, tag: "Land", reason: "Keeps land drops consistent." },
@@ -242,7 +243,7 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(blueCard.name as string);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
       { card: blueCard, tag: "Synergy", reason: "Fits the deck's plan." },
@@ -253,7 +254,7 @@ describe("suggestCards", () => {
     mockDeck([]);
     collectionFindManyMock.mockResolvedValue([]);
 
-    const result = await suggestCards("deck_1");
+    const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([]);
     expect(getLlmProviderMock).not.toHaveBeenCalled();
@@ -267,9 +268,35 @@ describe("suggestCards", () => {
     ]);
     mockSuggestion(validCard.name as string);
 
-    await suggestCards("deck_1");
+    await suggestCards("deck_1", { allowUnowned: false });
 
     expect(cardFindManyMock).not.toHaveBeenCalled();
+  });
+
+  it("includes the unowned catalog by default", async () => {
+    mockDeck([]);
+    const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
+    collectionFindManyMock.mockResolvedValue([]);
+    cardFindManyMock.mockResolvedValue([unowned]);
+    mockSuggestion(unowned.name as string);
+
+    const result = await suggestCards("deck_1");
+
+    expect(cardFindManyMock).toHaveBeenCalled();
+    expect(result.map((suggestion) => suggestion.card.id)).toEqual(["unowned_card"]);
+  });
+
+  it("includes the saved critique in the prompt when the deck has one", async () => {
+    mockDeck([], "The deck lacks removal.");
+    const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
+    collectionFindManyMock.mockResolvedValue([]);
+    cardFindManyMock.mockResolvedValue([unowned]);
+    const complete = vi.fn().mockResolvedValue("Unowned Card :: Removal :: Fixes it.");
+    getLlmProviderMock.mockReturnValue({ complete });
+
+    await suggestCards("deck_1");
+
+    expect(complete.mock.calls[0][0]).toContain("The deck lacks removal.");
   });
 
   it("accepts an unowned catalog suggestion when allowUnowned is true", async () => {
@@ -318,7 +345,7 @@ describe("suggestCards", () => {
     const completeMock = vi.fn().mockResolvedValue(`${filler.name} :: Synergy :: Fits the plan.`);
     getLlmProviderMock.mockReturnValue({ complete: completeMock });
 
-    await suggestCards("deck_1");
+    await suggestCards("deck_1", { allowUnowned: false });
 
     const prompt = completeMock.mock.calls[0][0] as string;
     expect(prompt).toContain("Suggest exactly 1 card ");
@@ -331,7 +358,7 @@ describe("suggestCards", () => {
     const completeMock = vi.fn().mockResolvedValue(`${filler.name} :: Synergy :: Fits the plan.`);
     getLlmProviderMock.mockReturnValue({ complete: completeMock });
 
-    await suggestCards("deck_1");
+    await suggestCards("deck_1", { allowUnowned: false });
 
     const prompt = completeMock.mock.calls[0][0] as string;
     expect(prompt).toContain("Suggest exactly 1 card ");
@@ -350,7 +377,7 @@ describe("suggestCards", () => {
     const completeMock = vi.fn().mockResolvedValue("Owned Card 0 :: Synergy :: Fits the plan.");
     getLlmProviderMock.mockReturnValue({ complete: completeMock });
 
-    await suggestCards("deck_1");
+    await suggestCards("deck_1", { allowUnowned: false });
 
     const prompt = completeMock.mock.calls[0][0] as string;
     expect(prompt).toContain("Suggest exactly 10 cards ");

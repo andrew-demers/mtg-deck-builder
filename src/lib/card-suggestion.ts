@@ -24,7 +24,7 @@ export interface SuggestCardsOptions {
    * cards to also include every catalog card within the commander's color
    * identity that isn't already in the deck, so it may suggest strong cards
    * the user doesn't yet own (surfaced to the user as "not owned"
-   * elsewhere). Defaults to false - owned cards only.
+   * elsewhere). Defaults to true; pass false to restrict to owned cards.
    */
   allowUnowned?: boolean;
   /**
@@ -64,7 +64,7 @@ export async function suggestCards(
   if (budgetUsd !== undefined && !(Number.isFinite(budgetUsd) && budgetUsd > 0)) {
     throw new CardSuggestionError("Budget must be a positive number");
   }
-  const allowUnowned = (options.allowUnowned ?? false) || budgetUsd !== undefined;
+  const allowUnowned = (options.allowUnowned ?? true) || budgetUsd !== undefined;
 
   const deck = await prisma.deck.findUnique({
     where: { id: deckId },
@@ -198,7 +198,7 @@ export async function suggestCards(
   const ownedIds = new Set(remainingPool.map((card) => card.id));
 
   const completion = await getLlmProvider().complete(
-    buildPrompt(commanders, pool, allowUnowned, candidateCount, budgetUsd, ownedIds),
+    buildPrompt(commanders, pool, allowUnowned, candidateCount, budgetUsd, ownedIds, deck.critique),
   );
   const suggestions = parseSuggestions(completion);
 
@@ -288,6 +288,7 @@ function buildPrompt(
   requestCount: number,
   budgetUsd?: number,
   ownedIds: Set<string> = new Set(),
+  critique: string | null = null,
 ): string {
   const names = pool
     .map((card) => {
@@ -314,6 +315,17 @@ function buildPrompt(
     "",
     `Suggest exactly ${requestCount} card${requestCount === 1 ? "" : "s"} to add to this deck from ${poolDescription}.`,
     "Every suggestion must be within the commander's color identity.",
+    ...(allowUnowned
+      ? ["Pick the strongest cards for this deck whether or not the player owns them; ownership is not a factor."]
+      : []),
+    ...(critique
+      ? [
+          "",
+          "A previous critique of this deck follows. Let it guide which weaknesses your suggestions address:",
+          critique,
+          "",
+        ]
+      : []),
     ...(budgetUsd !== undefined
       ? [
           `The player has $${budgetUsd.toFixed(2)} to spend in total on cards they don't own (owned cards are free).`,

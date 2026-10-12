@@ -14,19 +14,20 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 vi.mock("@/lib/deck-critique", () => ({
-  critiqueDeck: vi.fn(),
+  critiqueAndGradeDeck: vi.fn(),
   DeckCritiqueError: class DeckCritiqueError extends Error {},
 }));
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { critiqueDeck, DeckCritiqueError } from "@/lib/deck-critique";
+import { critiqueAndGradeDeck, DeckCritiqueError } from "@/lib/deck-critique";
+import { Prisma } from "@/generated/prisma/client";
 import { POST } from "@/app/api/decks/[id]/critique/route";
 
 const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckUpdateMock = prisma.deck.update as unknown as ReturnType<typeof vi.fn>;
-const critiqueDeckMock = critiqueDeck as unknown as ReturnType<typeof vi.fn>;
+const critiqueDeckMock = critiqueAndGradeDeck as unknown as ReturnType<typeof vi.fn>;
 
 function buildRequest(): Request {
   return new Request("http://localhost/api/decks/deck_1/critique", { method: "POST" });
@@ -116,7 +117,7 @@ describe("POST /api/decks/[id]/critique", () => {
       userId: "user_1",
       cards: [deckCard(1), deckCard(99)],
     });
-    critiqueDeckMock.mockResolvedValue("This deck has a strong ramp package.");
+    critiqueDeckMock.mockResolvedValue({ critique: "This deck has a strong ramp package.", grade: null });
 
     const updatedDeck = {
       id: "deck_1",
@@ -133,9 +134,38 @@ describe("POST /api/decks/[id]/critique", () => {
     expect(response.status).toBe(200);
     expect(deckUpdateMock).toHaveBeenCalledWith({
       where: { id: "deck_1" },
-      data: { critique: "This deck has a strong ramp package." },
+      data: {
+        critique: "This deck has a strong ramp package.",
+        gradeScore: null,
+        gradeGoal: null,
+        gradeBreakdown: Prisma.JsonNull,
+        gradeSummary: null,
+        gradeSignature: null,
+      },
       include: { commanderCard: true, cards: { include: { card: true } } },
     });
     expect(data).toEqual(updatedDeck);
+  });
+
+  it("stores the grade on the deck when the critique came with one", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1", cards: [deckCard(100)] });
+    const breakdown = [{ category: "Interaction", score: 70, note: "ok" }];
+    critiqueDeckMock.mockResolvedValue({
+      critique: "Nice.",
+      grade: { score: 70, goal: "Combo off", breakdown, summary: "Fine.", signature: "abc" },
+    });
+    deckUpdateMock.mockResolvedValue({ id: "deck_1" });
+
+    await POST(buildRequest(), buildParams("deck_1"));
+
+    expect(deckUpdateMock.mock.calls[0][0].data).toEqual({
+      critique: "Nice.",
+      gradeScore: 70,
+      gradeGoal: "Combo off",
+      gradeBreakdown: breakdown,
+      gradeSummary: "Fine.",
+      gradeSignature: "abc",
+    });
   });
 });

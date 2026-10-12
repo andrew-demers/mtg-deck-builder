@@ -9,6 +9,8 @@ import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
 import Markdown from "@/components/markdown";
 import DeckVersions from "@/components/deck-versions";
+import GradePanel, { type VersionGrade } from "@/components/grade-panel";
+import { deckSignature } from "@/lib/deck-signature";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { isCommanderEligible } from "@/lib/commander-eligibility";
@@ -49,6 +51,12 @@ interface DeckData {
   cards: DeckCardData[];
   critique: string | null;
   description: string | null;
+  goal: string | null;
+  gradeScore: number | null;
+  gradeGoal: string | null;
+  gradeBreakdown: VersionGrade["breakdown"] | null;
+  gradeSummary: string | null;
+  gradeSignature: string | null;
 }
 
 interface SuggestedCard {
@@ -964,6 +972,26 @@ export default function DeckPage() {
       ) : (
         <>
           <CardStats entries={deck.cards} label="cards in deck" />
+          <DeckVersions
+            deckId={deckId}
+            goal={deck.goal}
+            currentGrade={
+              deck.gradeScore !== null &&
+              deck.gradeGoal &&
+              deck.gradeGoal === deck.goal?.trim() &&
+              deck.gradeBreakdown &&
+              deck.gradeSignature === deckSignature(deck.commanderCardId, deck.cards)
+                ? {
+                    score: deck.gradeScore,
+                    goal: deck.gradeGoal,
+                    breakdown: deck.gradeBreakdown,
+                    summary: deck.gradeSummary ?? "",
+                  }
+                : null
+            }
+            onGoalSaved={(updated) => setDeck(updated as DeckData)}
+            onRestored={(restored) => setDeck(restored as DeckData)}
+          />
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm">
               <span className="font-medium">Estimated price:</span> {formatUsd(deckPrice.totalUsd)}
@@ -1105,8 +1133,6 @@ export default function DeckPage() {
             {deck.description ? <Markdown>{deck.description}</Markdown> : null}
           </div>
 
-          <DeckVersions deckId={deckId} onRestored={(restored) => setDeck(restored as DeckData)} />
-
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Deck critique</p>
@@ -1115,9 +1141,32 @@ export default function DeckPage() {
                   ? "Getting critique..."
                   : deck.critique
                     ? "Re-request critique"
-                    : "Get critique"}
+                    : deck.goal
+                      ? "Get critique and grade"
+                      : "Get critique"}
               </Button>
             </div>
+            {!deck.goal ? (
+              <p className="text-xs text-muted">Set a deck goal in the version history above to also get a grade.</p>
+            ) : null}
+            {deck.gradeScore !== null && deck.gradeGoal && deck.gradeBreakdown ? (
+              <>
+                {deck.gradeSignature !== deckSignature(deck.commanderCardId, deck.cards) ||
+                deck.gradeGoal !== deck.goal?.trim() ? (
+                  <p className="text-xs text-muted">
+                    This grade is from an earlier version of the deck or goal. Request a new critique to refresh it.
+                  </p>
+                ) : null}
+                <GradePanel
+                  grade={{
+                    score: deck.gradeScore,
+                    goal: deck.gradeGoal,
+                    breakdown: deck.gradeBreakdown,
+                    summary: deck.gradeSummary ?? "",
+                  }}
+                />
+              </>
+            ) : null}
             {deck.critique ? <Markdown>{deck.critique}</Markdown> : null}
           </div>
 
@@ -1126,19 +1175,11 @@ export default function DeckPage() {
               <p className="text-sm font-medium text-muted">Card suggestions</p>
               <div className="flex gap-2">
                 <Button
-                  variant="secondary"
-                  onClick={() => handleGetSuggestions(false)}
-                  disabled={isSuggesting}
-                  className="self-start px-5 py-2 text-sm"
-                >
-                  {isSuggesting ? "Getting suggestions..." : "Use cards I own"}
-                </Button>
-                <Button
                   onClick={() => handleGetSuggestions(true)}
                   disabled={isSuggesting}
                   className="self-start px-5 py-2 text-sm"
                 >
-                  {isSuggesting ? "Getting suggestions..." : "Include cards I don't own"}
+                  {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
                 </Button>
               </div>
             </div>

@@ -89,6 +89,15 @@ model Deck {
   commanderCard   Card?         @relation(fields: [commanderCardId], references: [id])
   critique        String?
   description     String?
+  goal            String?
+  /// Latest grade from the combined critique + grade call; same shape as the
+  /// DeckVersion grade columns. `gradeSignature` fingerprints the cards it was
+  /// graded on so a stale grade (deck edited since) can be told apart.
+  gradeScore      Int?
+  gradeGoal       String?
+  gradeBreakdown  Json?
+  gradeSummary    String?
+  gradeSignature  String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   cards           DeckCard[]
@@ -121,6 +130,13 @@ model DeckVersion {
   commanderCard   Card?             @relation(fields: [commanderCardId], references: [id])
   createdAt       DateTime          @default(now())
   cards           DeckVersionCard[]
+  /// Goal the grade was measured against, copied from Deck.goal at grading time.
+  gradeGoal       String?
+  /// 0-100 overall score: the mean of the category scores in `gradeBreakdown`.
+  gradeScore      Int?
+  /// Array of { category, score, note }.
+  gradeBreakdown  Json?
+  gradeSummary    String?
 
   @@unique([deckId, number])
 }

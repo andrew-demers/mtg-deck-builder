@@ -94,17 +94,17 @@ describe("POST /api/decks/[id]/suggest-cards", () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual([suggestedCard]);
-    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: false });
+    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: true });
   });
 
-  it("passes allowUnowned through to suggestCards when set", async () => {
+  it("passes allowUnowned: false through to suggestCards when set", async () => {
     authMock.mockResolvedValue({ user: { id: "user_1" } });
     deckFindUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
     suggestCardsMock.mockResolvedValue([suggestedCard]);
 
-    await POST(buildRequest({ allowUnowned: true }), buildParams("deck_1"));
+    await POST(buildRequest({ allowUnowned: false }), buildParams("deck_1"));
 
-    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: true });
+    expect(suggestCardsMock).toHaveBeenCalledWith("deck_1", { allowUnowned: false });
   });
 
   it("returns 400 when suggestCards throws a CardSuggestionError", async () => {
