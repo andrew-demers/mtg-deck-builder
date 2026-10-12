@@ -93,6 +93,7 @@ export default function DeckPage() {
   const [isKeepingOwned, setIsKeepingOwned] = useState(false);
   const [keepOwnedNotice, setKeepOwnedNotice] = useState<string | null>(null);
   const [addingCardId, setAddingCardId] = useState<string | null>(null);
+  const [isAddingAll, setIsAddingAll] = useState(false);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
   const [collectionCards, setCollectionCards] = useState<CardData[] | null>(null);
@@ -517,6 +518,46 @@ export default function DeckPage() {
       setError("Something went wrong adding this card to the deck.");
     } finally {
       setAddingCardId(null);
+    }
+  }
+
+  async function handleAddAllSuggestions() {
+    setError(null);
+    setIsAddingAll(true);
+
+    // Sequential on purpose: the add route reads then writes the deck, so
+    // parallel requests could race on the same DeckCard rows.
+    const failed: string[] = [];
+
+    try {
+      for (const { card } of suggestedCards) {
+        setAddingCardId(card.id);
+
+        try {
+          const response = await fetch(`/api/decks/${deckId}/cards`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cardId: card.id }),
+          });
+
+          if (!response.ok) {
+            failed.push(card.name);
+            continue;
+          }
+
+          setDeck((await response.json()) as DeckData);
+          setSuggestedCards((current) => current.filter((suggestion) => suggestion.card.id !== card.id));
+        } catch {
+          failed.push(card.name);
+        }
+      }
+
+      if (failed.length > 0) {
+        setError(`Couldn't add ${failed.join(", ")}.`);
+      }
+    } finally {
+      setAddingCardId(null);
+      setIsAddingAll(false);
     }
   }
 
@@ -1051,6 +1092,16 @@ export default function DeckPage() {
               </Button>
             </div>
             {suggestedCards.length > 0 ? (
+              <Button
+                variant="secondary"
+                onClick={handleAddAllSuggestions}
+                disabled={isAddingAll || addingCardId !== null}
+                className="self-start px-4 py-1 text-xs"
+              >
+                {isAddingAll ? "Adding..." : `Add all (${suggestedCards.length})`}
+              </Button>
+            ) : null}
+            {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {suggestedCards.map(({ card, tag, reason }) => (
                   <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
@@ -1084,7 +1135,7 @@ export default function DeckPage() {
                     <Button
                       variant="secondary"
                       onClick={() => handleAddCard(card.id)}
-                      disabled={addingCardId === card.id}
+                      disabled={addingCardId === card.id || isAddingAll}
                       className="px-4 py-1 text-xs"
                     >
                       {addingCardId === card.id ? "Adding..." : "Add"}
