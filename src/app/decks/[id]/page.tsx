@@ -978,7 +978,7 @@ export default function DeckPage() {
             currentGrade={
               deck.gradeScore !== null &&
               deck.gradeGoal &&
-              deck.gradeGoal === deck.goal?.trim() &&
+              (!deck.goal?.trim() || deck.gradeGoal === deck.goal.trim()) &&
               deck.gradeBreakdown &&
               deck.gradeSignature === deckSignature(deck.commanderCardId, deck.cards)
                 ? {
@@ -1141,18 +1141,19 @@ export default function DeckPage() {
                   ? "Getting critique..."
                   : deck.critique
                     ? "Re-request critique"
-                    : deck.goal
-                      ? "Get critique and grade"
-                      : "Get critique"}
+                    : "Get critique and grade"}
               </Button>
             </div>
             {!deck.goal ? (
-              <p className="text-xs text-muted">Set a deck goal in the version history above to also get a grade.</p>
+              <p className="text-xs text-muted">
+                No deck goal set, so the critique works out the deck&apos;s win condition and grades against that. Set a
+                goal in the version history above to grade against your own.
+              </p>
             ) : null}
             {deck.gradeScore !== null && deck.gradeGoal && deck.gradeBreakdown ? (
               <>
                 {deck.gradeSignature !== deckSignature(deck.commanderCardId, deck.cards) ||
-                deck.gradeGoal !== deck.goal?.trim() ? (
+                deck.goal?.trim() && deck.gradeGoal !== deck.goal.trim() ? (
                   <p className="text-xs text-muted">
                     This grade is from an earlier version of the deck or goal. Request a new critique to refresh it.
                   </p>

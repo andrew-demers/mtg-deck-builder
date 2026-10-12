@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { gradeDeck, type DeckGrade, type GradeCategory, type GradeInput } from "@/lib/deck-grade";
+import { DEFAULT_GRADE_GOAL, gradeDeck, type DeckGrade, type GradeCategory, type GradeInput } from "@/lib/deck-grade";
 import { deckSignature } from "@/lib/deck-signature";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -171,10 +171,10 @@ function formatCard(card: { name: string; quantity: number }): string {
  */
 export function buildGradeInput(
   snapshot: DeckSnapshot,
-  goal: string,
+  goal: string | null,
   earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
 ): GradeInput {
-  const comparable = earlier?.grade && earlier.grade.goal === goal ? earlier : null;
+  const comparable = goal && earlier?.grade && earlier.grade.goal === goal ? earlier : null;
   const changes = comparable ? diffSnapshots(comparable.snapshot, snapshot) : null;
 
   return {
@@ -195,7 +195,7 @@ export function buildGradeInput(
 
 async function gradeSnapshot(
   snapshot: DeckSnapshot,
-  goal: string,
+  goal: string | null,
   earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
 ): Promise<DeckGrade> {
   return gradeDeck(buildGradeInput(snapshot, goal, earlier));
@@ -346,10 +346,7 @@ export async function gradeCurrentDeck(
   deckId: string,
 ): Promise<DeckGrade & { goal: string; signature: string }> {
   const deck = await loadDeck(deckId);
-  const goal = deck.goal?.trim();
-  if (!goal) {
-    throw new DeckVersionError("Set a goal for this deck before grading it");
-  }
+  const goal = deck.goal?.trim() || null;
   if (deck.cards.length === 0) {
     throw new DeckVersionError("Build the deck before grading it");
   }
@@ -361,7 +358,11 @@ export async function gradeCurrentDeck(
     throw new DeckVersionError(error instanceof Error ? error.message : "Couldn't grade this deck");
   }
 
-  return { ...grade, goal, signature: deckSignature(deck.commanderCardId, deck.cards) };
+  return {
+    ...grade,
+    goal: goal ?? grade.winCondition ?? DEFAULT_GRADE_GOAL,
+    signature: deckSignature(deck.commanderCardId, deck.cards),
+  };
 }
 
 /**

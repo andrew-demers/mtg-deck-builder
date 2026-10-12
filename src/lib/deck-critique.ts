@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { gradeAndCritiqueDeck, type DeckGrade } from "@/lib/deck-grade";
+import { DEFAULT_GRADE_GOAL, gradeAndCritiqueDeck, type DeckGrade } from "@/lib/deck-grade";
 import { buildGradeInput, loadEarlierGraded, snapshotOf } from "@/lib/deck-version";
 import { deckSignature } from "@/lib/deck-signature";
 
@@ -53,15 +53,16 @@ function buildPrompt(
 
 export interface CritiqueResult {
   critique: string;
-  /** Null when the deck has no goal to grade against, or the scores couldn't be read. */
+  /** Null when the scores couldn't be read. */
   grade: (DeckGrade & { goal: string; signature: string }) | null;
 }
 
 /**
- * Critiques the deck and, when it has a goal, grades it in the same LLM call
- * so the written critique and the scores agree. The grade is anchored to the
+ * Critiques the deck and grades it in the same LLM call so the written
+ * critique and the scores agree. Decks without a goal are graded against
+ * the win condition the model infers, which is stored as the grade's goal. The grade is anchored to the
  * latest graded version (when graded against the same goal) so it stays
- * comparable with version history. Without a goal this is just `critiqueDeck`.
+ * comparable with version history.
  */
 export async function critiqueAndGradeDeck(deckId: string): Promise<CritiqueResult> {
   const deck = await prisma.deck.findUnique({
@@ -77,10 +78,7 @@ export async function critiqueAndGradeDeck(deckId: string): Promise<CritiqueResu
     throw new DeckCritiqueError("Deck has no commander set");
   }
 
-  const goal = deck.goal?.trim();
-  if (!goal) {
-    return { critique: await critiqueDeck(deckId), grade: null };
-  }
+  const goal = deck.goal?.trim() || null;
 
   const { grade, critique } = await gradeAndCritiqueDeck(
     buildGradeInput(snapshotOf(deck), goal, await loadEarlierGraded(deckId)),
@@ -88,6 +86,13 @@ export async function critiqueAndGradeDeck(deckId: string): Promise<CritiqueResu
 
   return {
     critique,
-    grade: grade ? { ...grade, goal, signature: deckSignature(deck.commanderCardId, deck.cards) } : null,
+    grade: grade
+      ? {
+          ...grade,
+          // Without a stated goal, grade against the win condition the model inferred.
+          goal: goal ?? grade.winCondition ?? DEFAULT_GRADE_GOAL,
+          signature: deckSignature(deck.commanderCardId, deck.cards),
+        }
+      : null,
   };
 }

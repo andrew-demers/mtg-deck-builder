@@ -3,6 +3,9 @@ export { letterGrade } from "@/lib/grade-letter";
 
 export class DeckGradeError extends Error {}
 
+/** Graded against when the deck has no goal of its own. */
+export const DEFAULT_GRADE_GOAL = "Be a consistent, well-built deck that makes the most of its commander";
+
 /** Fixed rubric so grades of different versions are comparable category by category. */
 export const GRADE_CATEGORIES = [
   "Goal execution",
@@ -24,6 +27,8 @@ export interface DeckGrade {
   score: number;
   breakdown: GradeCategory[];
   summary: string;
+  /** The win condition the model inferred, when it was asked to rather than given a goal. */
+  winCondition?: string;
 }
 
 /** A previously saved grade, shown to the grader so a re-grade stays stable. */
@@ -35,7 +40,8 @@ export interface PreviousGrade {
 }
 
 export interface GradeInput {
-  goal: string;
+  /** What the deck should achieve. When null, the model works out the win condition itself and grades against it. */
+  goal: string | null;
   commanderName: string;
   /** Non-commander cards, one entry per card name with its quantity. */
   cards: { name: string; quantity: number }[];
@@ -60,7 +66,8 @@ export async function gradeDeck(input: GradeInput): Promise<DeckGrade> {
   return parseGrade(completion);
 }
 
-export function buildGradePrompt({ goal, commanderName, cards, previous, withCritique }: GradeInput): string {
+export function buildGradePrompt(input: GradeInput): string {
+  const { goal, commanderName, cards, previous, withCritique } = input;
   const cardLines = cards
     .map((card) => `- ${card.name}${card.quantity > 1 ? ` x${card.quantity}` : ""}`)
     .join("\n");
@@ -68,12 +75,12 @@ export function buildGradePrompt({ goal, commanderName, cards, previous, withCri
   return [
     "You are grading a Magic: The Gathering Commander/EDH deck on how well it is built to achieve its owner's goal.",
     `Commander: ${commanderName}`,
-    `Goal: ${goal}`,
+    ...(goal ? [`Goal: ${goal}`] : []),
     "",
     "The rest of the deck:",
     cardLines,
     "",
-    "Score each category below from 0 to 100 as an integer, judged only against the goal above, using this scale:",
+    `Score each category below from 0 to 100 as an integer, judged only against ${goal ? "the goal above" : "the win condition you identified"}, using this scale:`,
     "- 90-100: excellent; hard to meaningfully improve.",
     "- 75-89: strong, with a few clear gaps.",
     "- 60-74: playable but inconsistent or underpowered for the goal.",
@@ -102,13 +109,19 @@ export function buildGradePrompt({ goal, commanderName, cards, previous, withCri
         ]
       : []),
     "",
+    ...(goal
+      ? []
+      : [
+          "The owner has not stated a goal. First work out the deck's intended win condition from the commander and the cards (e.g. 'Win by combat damage with go-wide tokens'), and grade against that.",
+        ]),
     "Respond with exactly one line per category, in the order above, in exactly this format and nothing else:",
     "Category :: score :: One sentence naming the specific cards or gaps behind the score.",
+    ...(goal ? [] : ["Before the category lines, put a line: WIN CONDITION :: One sentence describing how this deck intends to win."]),
     "Then a final line in this format:",
     "SUMMARY :: Two sentences on the deck's biggest strength and the single change that would most improve its odds of reaching the goal.",
     ...(withCritique
       ? [
-          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck (markdown is fine): its strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the goal. Put nothing after the critique.`,
+          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck (markdown is fine): its strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the ${input.goal ? "goal" : "win condition"}. Put nothing after the critique.`,
         ]
       : []),
   ].join("\n");
@@ -122,6 +135,7 @@ export function parseGrade(completion: string): DeckGrade {
 
   const byCategory = new Map<string, GradeCategory>();
   let summary = "";
+  let winCondition = "";
 
   for (const line of lines) {
     const [label, second, ...rest] = line.split("::").map((part) => part.trim());
@@ -129,6 +143,11 @@ export function parseGrade(completion: string): DeckGrade {
 
     if (label.toLowerCase() === "summary") {
       summary = [second, ...rest].join(" :: ");
+      continue;
+    }
+
+    if (label.toLowerCase() === "win condition") {
+      winCondition = [second, ...rest].join(" :: ");
       continue;
     }
 
@@ -147,7 +166,7 @@ export function parseGrade(completion: string): DeckGrade {
   const complete = breakdown as GradeCategory[];
   const score = Math.round(complete.reduce((sum, entry) => sum + entry.score, 0) / complete.length);
 
-  return { score, breakdown: complete, summary };
+  return { score, breakdown: complete, summary, ...(winCondition ? { winCondition } : {}) };
 }
 
 /**
