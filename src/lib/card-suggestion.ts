@@ -238,6 +238,80 @@ export async function suggestCards(
 }
 
 /**
+ * Turns the cards a saved critique recommends adding into real suggestions.
+ * The LLM only reads the critique's text and lists the card names it tells
+ * the player to add (with a tag and reason); each name is then matched
+ * against the catalog, so hallucinated names, cards already in the deck, and
+ * cards outside the commander's color identity are dropped. Results keep the
+ * critique's order and are not budget-limited - the caller narrows them to a
+ * budget.
+ */
+export async function suggestCardsFromCritique(deckId: string): Promise<SuggestedCard[]> {
+  const deck = await prisma.deck.findUnique({
+    where: { id: deckId },
+    include: { commanderCard: true, cards: { include: { card: true } } },
+  });
+
+  if (!deck) {
+    throw new CardSuggestionError("Deck not found");
+  }
+
+  if (!deck.commanderCardId || !deck.commanderCard) {
+    throw new CardSuggestionError("Deck has no commander set");
+  }
+
+  if (!deck.critique?.trim()) {
+    throw new CardSuggestionError("Deck has no critique yet");
+  }
+
+  const commanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  const commanders =
+    commanderDeckCards.length > 0
+      ? commanderDeckCards.map((deckCard) => deckCard.card)
+      : [deck.commanderCard];
+  const colorIdentity = unionColorIdentity(commanders);
+  const inDeckIds = new Set([...commanders.map((c) => c.id), ...deck.cards.map((c) => c.cardId)]);
+
+  const completion = await getLlmProvider().complete(
+    [
+      "Below is a critique of a Magic: The Gathering Commander/EDH deck.",
+      "List every specific card the critique recommends ADDING to the deck, in the order they appear.",
+      "Skip cards it recommends cutting or merely mentions, and skip generic advice that names no card.",
+      "Respond with one card per line in exactly this format and nothing else:",
+      "Card Name :: Short tag (e.g. Ramp, Removal, Tutor, Finisher) :: One-sentence reason the critique gives for adding it.",
+      "",
+      "Critique:",
+      deck.critique,
+    ].join("\n"),
+  );
+  const named = parseSuggestions(completion);
+  if (named.length === 0) {
+    return [];
+  }
+
+  const found = await prisma.card.findMany({
+    where: { name: { in: named.map(({ name }) => name), mode: "insensitive" } },
+  });
+  const cardsByName = new Map(found.map((card) => [normalize(card.name), card]));
+
+  const matched = new Map<string, SuggestedCard>();
+  for (const { name, tag, reason } of named) {
+    const card = cardsByName.get(normalize(name));
+    if (
+      !card ||
+      inDeckIds.has(card.id) ||
+      matched.has(card.id) ||
+      !validateColorIdentity(colorIdentity, [card])
+    ) {
+      continue;
+    }
+    matched.set(card.id, { card, tag, reason });
+  }
+
+  return withFreshPrices(Array.from(matched.values()));
+}
+
+/**
  * Fetches current prices from Scryfall for suggested cards whose stored
  * price is missing or stale, then returns the suggestions with the updated
  * cards. Prices are informational here, so if Scryfall is unreachable the

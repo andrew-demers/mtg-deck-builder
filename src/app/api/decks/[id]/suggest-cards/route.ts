@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
+import { suggestCards, suggestCardsFromCritique, CardSuggestionError } from "@/lib/card-suggestion";
 import { llmErrorResponse } from "@/lib/llm/error-response";
 
 interface SuggestCardsBody {
   allowUnowned?: boolean;
   budgetUsd?: number;
+  /** Return the cards the saved critique recommends adding instead of asking for fresh suggestions. */
+  fromCritique?: boolean;
 }
 
 /**
@@ -48,6 +50,9 @@ export async function POST(
   const body = (await request.json().catch(() => null)) as SuggestCardsBody | null;
 
   try {
+    if (body?.fromCritique) {
+      return NextResponse.json(await suggestCardsFromCritique(id), { status: 200 });
+    }
     const cards = await suggestCards(id, {
       allowUnowned: body?.allowUnowned ?? true,
       budgetUsd: typeof body?.budgetUsd === "number" ? body.budgetUsd : undefined,
