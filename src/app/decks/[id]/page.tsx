@@ -79,6 +79,8 @@ export default function DeckPage() {
 
   const [deck, setDeck] = useState<DeckData | null>(null);
   const [isDeletingDeck, setIsDeletingDeck] = useState(false);
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isCritiquing, setIsCritiquing] = useState(false);
@@ -614,6 +616,33 @@ export default function DeckPage() {
     }
   }
 
+  async function handleRename() {
+    if (nameDraft === null || !nameDraft.trim()) return;
+    setError(null);
+    setIsRenaming(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nameDraft }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong renaming this deck.");
+        return;
+      }
+
+      setDeck((await response.json()) as DeckData);
+      setNameDraft(null);
+    } catch {
+      setError("Something went wrong renaming this deck.");
+    } finally {
+      setIsRenaming(false);
+    }
+  }
+
   async function handleLoadCollection() {
     setError(null);
     setIsLoadingCollection(true);
@@ -761,7 +790,50 @@ export default function DeckPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-display text-3xl tracking-wide">{deck.name}</h1>
+        {nameDraft === null ? (
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-3xl tracking-wide">{deck.name}</h1>
+            <Button
+              variant="secondary"
+              className="px-4 py-1 text-xs"
+              onClick={() => setNameDraft(deck.name)}
+            >
+              Rename
+            </Button>
+          </div>
+        ) : (
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleRename();
+            }}
+          >
+            <input
+              type="text"
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value)}
+              aria-label="Deck name"
+              autoFocus
+              className="input text-lg"
+            />
+            <Button
+              type="submit"
+              disabled={isRenaming || !nameDraft.trim()}
+              className="px-4 py-1 text-xs"
+            >
+              {isRenaming ? "Saving..." : "Save"}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={isRenaming}
+              onClick={() => setNameDraft(null)}
+              className="px-4 py-1 text-xs"
+            >
+              Cancel
+            </Button>
+          </form>
+        )}
         <div className="flex gap-2">
           <LinkButton
             variant="secondary"

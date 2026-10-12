@@ -40,6 +40,54 @@ export async function GET(
   return NextResponse.json(deck);
 }
 
+interface RenameDeckBody {
+  name?: string;
+}
+
+/**
+ * PATCH /api/decks/[id] - session-scoped. Renames the deck. 404 if the deck
+ * doesn't exist, 403 if it belongs to a different user, 400 if `name` is
+ * missing or blank.
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  const deck = await prisma.deck.findUnique({ where: { id } });
+
+  if (!deck) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  if (deck.userId !== userId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = (await request.json().catch(() => null)) as RenameDeckBody | null;
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+
+  if (!name) {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+
+  const updatedDeck = await prisma.deck.update({
+    where: { id },
+    data: { name },
+    include: { commanderCard: true, cards: { include: { card: true } } },
+  });
+
+  return NextResponse.json(updatedDeck);
+}
+
 /**
  * DELETE /api/decks/[id] - session-scoped. Deletes the deck, its DeckCards,
  * and its saved versions (the foreign keys are ON DELETE RESTRICT, so

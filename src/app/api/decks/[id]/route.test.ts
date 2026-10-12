@@ -9,6 +9,7 @@ vi.mock("@/lib/prisma", () => ({
     deck: {
       findUnique: vi.fn(),
       delete: vi.fn(),
+      update: vi.fn(),
     },
     deckCard: {
       deleteMany: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { DELETE, GET } from "@/app/api/decks/[id]/route";
+import { DELETE, GET, PATCH } from "@/app/api/decks/[id]/route";
 
 const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const findUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -173,5 +174,70 @@ describe("DELETE /api/decks/[id]", () => {
     expect(versionDeleteManyMock).toHaveBeenCalledWith({ where: { deckId: "deck_1" } });
     expect(deckCardDeleteManyMock).toHaveBeenCalledWith({ where: { deckId: "deck_1" } });
     expect(deckDeleteMock).toHaveBeenCalledWith({ where: { id: "deck_1" } });
+  });
+});
+
+describe("PATCH /api/decks/[id]", () => {
+  const deckUpdateMock = prisma.deck.update as unknown as ReturnType<typeof vi.fn>;
+
+  function patchRequest(body: unknown): Request {
+    return new Request("http://localhost/api/decks/deck_1", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  beforeEach(() => {
+    authMock.mockReset();
+    findUniqueMock.mockReset();
+    deckUpdateMock.mockReset();
+  });
+
+  it("returns 401 when there is no session", async () => {
+    authMock.mockResolvedValue(null);
+
+    const response = await PATCH(patchRequest({ name: "New" }), buildParams("deck_1"));
+
+    expect(response.status).toBe(401);
+  });
+
+  it("returns 404 when the deck does not exist", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue(null);
+
+    const response = await PATCH(patchRequest({ name: "New" }), buildParams("missing"));
+
+    expect(response.status).toBe(404);
+  });
+
+  it("returns 403 when the deck belongs to a different user", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "someone_else" });
+
+    const response = await PATCH(patchRequest({ name: "New" }), buildParams("deck_1"));
+
+    expect(response.status).toBe(403);
+    expect(deckUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the name is blank or missing", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
+
+    expect((await PATCH(patchRequest({ name: "   " }), buildParams("deck_1"))).status).toBe(400);
+    expect((await PATCH(patchRequest({}), buildParams("deck_1"))).status).toBe(400);
+    expect(deckUpdateMock).not.toHaveBeenCalled();
+  });
+
+  it("saves the trimmed name and returns the deck", async () => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    findUniqueMock.mockResolvedValue({ id: "deck_1", userId: "user_1" });
+    deckUpdateMock.mockResolvedValue({ id: "deck_1", name: "New name" });
+
+    const response = await PATCH(patchRequest({ name: "  New name " }), buildParams("deck_1"));
+
+    expect(response.status).toBe(200);
+    expect(deckUpdateMock.mock.calls[0][0].data).toEqual({ name: "New name" });
+    expect((await response.json()).name).toBe("New name");
   });
 });
