@@ -7,6 +7,7 @@ import ManaCost from "@/components/mana-cost";
 import ColorIdentityPips from "@/components/color-identity";
 import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
+import CollapsibleCard from "@/components/collapsible-card";
 import Markdown from "@/components/markdown";
 import DeckVersions from "@/components/deck-versions";
 import type { VersionGrade } from "@/components/grade-panel";
@@ -14,8 +15,16 @@ import { deckSignature } from "@/lib/deck-signature";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { isCommanderEligible } from "@/lib/commander-eligibility";
-import { buildBuyList, buildMassEntryUrl, formatBuyListText } from "@/lib/tcgplayer";
-import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
+import {
+  buildBuyList,
+  buildMassEntryUrl,
+  formatBuyListText,
+} from "@/lib/tcgplayer";
+import {
+  isBasicLand,
+  unionColorIdentity,
+  validateColorIdentity,
+} from "@/lib/commander-legality";
 
 interface CardData {
   id: string;
@@ -107,9 +116,13 @@ export default function DeckPage() {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   const [ownedOnly, setOwnedOnly] = useState(false);
-  const [tokenRecommendations, setTokenRecommendations] = useState<TokenRecommendation[] | null>(null);
+  const [tokenRecommendations, setTokenRecommendations] = useState<
+    TokenRecommendation[] | null
+  >(null);
   const [isEvaluatingTokens, setIsEvaluatingTokens] = useState(false);
-  const [changingFromCardId, setChangingFromCardId] = useState<string | null>(null);
+  const [changingFromCardId, setChangingFromCardId] = useState<string | null>(
+    null,
+  );
   const [commanderQuery, setCommanderQuery] = useState("");
   const [isChangingCommander, setIsChangingCommander] = useState(false);
   const [isKeepingOwned, setIsKeepingOwned] = useState(false);
@@ -118,13 +131,19 @@ export default function DeckPage() {
   const [isAddingAll, setIsAddingAll] = useState(false);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null);
   const [updatingCardId, setUpdatingCardId] = useState<string | null>(null);
-  const [collectionCards, setCollectionCards] = useState<CardData[] | null>(null);
+  const [collectionCards, setCollectionCards] = useState<CardData[] | null>(
+    null,
+  );
   const [isLoadingCollection, setIsLoadingCollection] = useState(false);
   const [collectionQuery, setCollectionQuery] = useState("");
   const [switchingCardId, setSwitchingCardId] = useState<string | null>(null);
-  const [otherDeckCardIds, setOtherDeckCardIds] = useState<Set<string>>(new Set());
+  const [otherDeckCardIds, setOtherDeckCardIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [swapQuery, setSwapQuery] = useState("");
-  const [selectedNewCardIds, setSelectedNewCardIds] = useState<Set<string>>(new Set());
+  const [selectedNewCardIds, setSelectedNewCardIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [replacements, setReplacements] = useState<ReplacementSuggestion[]>([]);
   const [isFindingReplacements, setIsFindingReplacements] = useState(false);
   const [applyingSwapId, setApplyingSwapId] = useState<string | null>(null);
@@ -141,7 +160,9 @@ export default function DeckPage() {
       setError(null);
 
       try {
-        const response = await fetch(`/api/decks/${deckId}`, { signal: controller.signal });
+        const response = await fetch(`/api/decks/${deckId}`, {
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           setError("Something went wrong loading this deck.");
@@ -176,7 +197,9 @@ export default function DeckPage() {
       setIsLoadingCollection(true);
 
       try {
-        const response = await fetch("/api/collection", { signal: controller.signal });
+        const response = await fetch("/api/collection", {
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           return;
@@ -217,9 +240,12 @@ export default function DeckPage() {
 
     async function loadOtherDeckCardIds() {
       try {
-        const response = await fetch(`/api/decks/${deckId}/other-deck-card-ids`, {
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          `/api/decks/${deckId}/other-deck-card-ids`,
+          {
+            signal: controller.signal,
+          },
+        );
 
         if (!response.ok) {
           return;
@@ -244,10 +270,14 @@ export default function DeckPage() {
     setIsBuilding(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/build`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/build`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong building this deck.");
         return;
       }
@@ -266,10 +296,14 @@ export default function DeckPage() {
     setIsRefreshingPrices(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/prices`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/prices`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong refreshing prices.");
         return;
       }
@@ -285,7 +319,11 @@ export default function DeckPage() {
     }
   }
 
-  async function handleChangeCommander(fromCardId: string, toCardId: string, removeOffIdentity = false) {
+  async function handleChangeCommander(
+    fromCardId: string,
+    toCardId: string,
+    removeOffIdentity = false,
+  ) {
     setError(null);
     setIsChangingCommander(true);
 
@@ -297,7 +335,9 @@ export default function DeckPage() {
       });
 
       if (response.status === 409) {
-        const { conflicts } = (await response.json()) as { conflicts: string[] };
+        const { conflicts } = (await response.json()) as {
+          conflicts: string[];
+        };
         if (
           window.confirm(
             `This commander's colors don't allow ${conflicts.length} card${conflicts.length === 1 ? "" : "s"} in the deck: ${conflicts.join(", ")}. Remove them and change commander?`,
@@ -310,7 +350,9 @@ export default function DeckPage() {
       }
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong changing the commander.");
         return;
       }
@@ -339,15 +381,21 @@ export default function DeckPage() {
     setIsKeepingOwned(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/keep-owned`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/keep-owned`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong updating this deck.");
         return;
       }
 
-      const { removed } = (await response.json()) as { removed: { name: string }[] };
+      const { removed } = (await response.json()) as {
+        removed: { name: string }[];
+      };
       setKeepOwnedNotice(
         removed.length === 0
           ? "Every card in this deck is already owned and unused elsewhere."
@@ -370,11 +418,18 @@ export default function DeckPage() {
     setIsCritiquing(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/critique`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/critique`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong getting a critique for this deck.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ??
+            "Something went wrong getting a critique for this deck.",
+        );
         return;
       }
 
@@ -392,11 +447,18 @@ export default function DeckPage() {
     setIsDescribing(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/description`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/description`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong getting a description for this deck.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ??
+            "Something went wrong getting a description for this deck.",
+        );
         return;
       }
 
@@ -414,11 +476,17 @@ export default function DeckPage() {
     setIsEvaluatingTokens(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/evaluate-tokens`, { method: "POST" });
+      const response = await fetch(`/api/decks/${deckId}/evaluate-tokens`, {
+        method: "POST",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong evaluating tokens and counters.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ?? "Something went wrong evaluating tokens and counters.",
+        );
         return;
       }
 
@@ -430,7 +498,10 @@ export default function DeckPage() {
     }
   }
 
-  async function handleGetSuggestions(allowUnowned: boolean, budgetUsd?: number) {
+  async function handleGetSuggestions(
+    allowUnowned: boolean,
+    budgetUsd?: number,
+  ) {
     setError(null);
     setIsSuggesting(true);
 
@@ -442,8 +513,13 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong getting card suggestions for this deck.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ??
+            "Something went wrong getting card suggestions for this deck.",
+        );
         return;
       }
 
@@ -480,8 +556,13 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong getting replacement suggestions.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ??
+            "Something went wrong getting replacement suggestions.",
+        );
         return;
       }
 
@@ -494,7 +575,10 @@ export default function DeckPage() {
     }
   }
 
-  async function handleApplyReplacement({ add, remove }: ReplacementSuggestion) {
+  async function handleApplyReplacement({
+    add,
+    remove,
+  }: ReplacementSuggestion) {
     setError(null);
     setApplyingSwapId(add.id);
 
@@ -506,25 +590,36 @@ export default function DeckPage() {
       });
 
       if (!addResponse.ok) {
-        const data = (await addResponse.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong adding this card to the deck.");
+        const data = (await addResponse.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ?? "Something went wrong adding this card to the deck.",
+        );
         return;
       }
 
-      const removeResponse = await fetch(`/api/decks/${deckId}/cards/${remove.id}`, {
-        method: "DELETE",
-      });
+      const removeResponse = await fetch(
+        `/api/decks/${deckId}/cards/${remove.id}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       if (!removeResponse.ok) {
         // The add already succeeded, so show the deck as it now stands (one
         // card over) rather than hiding that half of the swap happened.
         setDeck((await addResponse.json()) as DeckData);
-        setError(`Added ${add.name}, but couldn't remove ${remove.name}. Remove it manually.`);
+        setError(
+          `Added ${add.name}, but couldn't remove ${remove.name}. Remove it manually.`,
+        );
         return;
       }
 
       setDeck((await removeResponse.json()) as DeckData);
-      setReplacements((current) => current.filter((swap) => swap.add.id !== add.id));
+      setReplacements((current) =>
+        current.filter((swap) => swap.add.id !== add.id),
+      );
       setSelectedNewCardIds((current) => {
         const next = new Set(current);
         next.delete(add.id);
@@ -549,14 +644,20 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong adding this card to the deck.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ?? "Something went wrong adding this card to the deck.",
+        );
         return;
       }
 
       const data = (await response.json()) as DeckData;
       setDeck(data);
-      setSuggestedCards((current) => current.filter((suggestion) => suggestion.card.id !== cardId));
+      setSuggestedCards((current) =>
+        current.filter((suggestion) => suggestion.card.id !== cardId),
+      );
     } catch {
       setError("Something went wrong adding this card to the deck.");
     } finally {
@@ -589,7 +690,9 @@ export default function DeckPage() {
           }
 
           setDeck((await response.json()) as DeckData);
-          setSuggestedCards((current) => current.filter((suggestion) => suggestion.card.id !== card.id));
+          setSuggestedCards((current) =>
+            current.filter((suggestion) => suggestion.card.id !== card.id),
+          );
         } catch {
           failed.push(card.name);
         }
@@ -609,10 +712,14 @@ export default function DeckPage() {
     setRemovingCardId(cardId);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}/cards/${cardId}`, { method: "DELETE" });
+      const response = await fetch(`/api/decks/${deckId}/cards/${cardId}`, {
+        method: "DELETE",
+      });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong removing this card.");
         return;
       }
@@ -642,8 +749,12 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong updating this card's quantity.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ?? "Something went wrong updating this card's quantity.",
+        );
         return;
       }
 
@@ -669,7 +780,9 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
         setError(data?.error ?? "Something went wrong renaming this deck.");
         return;
       }
@@ -715,7 +828,10 @@ export default function DeckPage() {
   }
 
   async function handleDeleteDeck() {
-    if (!deck || !window.confirm(`Delete "${deck.name}"? This can't be undone.`)) {
+    if (
+      !deck ||
+      !window.confirm(`Delete "${deck.name}"? This can't be undone.`)
+    ) {
       return;
     }
 
@@ -723,7 +839,9 @@ export default function DeckPage() {
     setIsDeletingDeck(true);
 
     try {
-      const response = await fetch(`/api/decks/${deckId}`, { method: "DELETE" });
+      const response = await fetch(`/api/decks/${deckId}`, {
+        method: "DELETE",
+      });
 
       if (!response.ok) {
         setError("Something went wrong deleting this deck.");
@@ -750,8 +868,12 @@ export default function DeckPage() {
       });
 
       if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as { error?: string } | null;
-        setError(data?.error ?? "Something went wrong switching the active commander.");
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ?? "Something went wrong switching the active commander.",
+        );
         return;
       }
 
@@ -783,7 +905,9 @@ export default function DeckPage() {
   const sortedCards = sortDeckCards(deck.cards);
 
   const deckCardIds = new Set(deck.cards.map((deckCard) => deckCard.cardId));
-  const builtCommanderDeckCards = deck.cards.filter((deckCard) => deckCard.isCommander);
+  const builtCommanderDeckCards = deck.cards.filter(
+    (deckCard) => deckCard.isCommander,
+  );
   // A deck's commander is chosen (and `commanderCardId` set) before it's ever
   // built, when `cards` has no rows yet - fall back to `commanderCard` so the
   // commander box still renders pre-build, same as before multi-commander
@@ -792,16 +916,25 @@ export default function DeckPage() {
     builtCommanderDeckCards.length > 0
       ? builtCommanderDeckCards
       : deck.commanderCard
-        ? [{ id: deck.commanderCard.id, cardId: deck.commanderCard.id, card: deck.commanderCard }]
+        ? [
+            {
+              id: deck.commanderCard.id,
+              cardId: deck.commanderCard.id,
+              card: deck.commanderCard,
+            },
+          ]
         : [];
-  const commanderColorIdentity = unionColorIdentity(commanderDeckCards.map((deckCard) => deckCard.card));
+  const commanderColorIdentity = unionColorIdentity(
+    commanderDeckCards.map((deckCard) => deckCard.card),
+  );
   const ownedCardIds = new Set((collectionCards ?? []).map((card) => card.id));
   const normalizedCollectionQuery = collectionQuery.trim().toLowerCase();
   const availableCollectionCards = (collectionCards ?? []).filter(
     (card) =>
       !deckCardIds.has(card.id) &&
       validateColorIdentity(commanderColorIdentity, [card]) &&
-      (normalizedCollectionQuery === "" || card.name.toLowerCase().includes(normalizedCollectionQuery)),
+      (normalizedCollectionQuery === "" ||
+        card.name.toLowerCase().includes(normalizedCollectionQuery)),
   );
 
   const normalizedCommanderQuery = commanderQuery.trim().toLowerCase();
@@ -809,7 +942,8 @@ export default function DeckPage() {
     (card) =>
       isCommanderEligible(card) &&
       !commanderDeckCards.some((deckCard) => deckCard.cardId === card.id) &&
-      (normalizedCommanderQuery === "" || card.name.toLowerCase().includes(normalizedCommanderQuery)),
+      (normalizedCommanderQuery === "" ||
+        card.name.toLowerCase().includes(normalizedCommanderQuery)),
   );
 
   const deckPrice = computeDeckPrice(deck.cards);
@@ -901,21 +1035,25 @@ export default function DeckPage() {
             return (
               <div key={deckCard.id} className="card flex-1 overflow-hidden">
                 <div className="mb-3 -mx-6 -mt-6 flex h-1.5">
-                  {WUBRG_ORDER.filter((letter) => deckCard.card.colorIdentity.includes(letter)).map(
-                    (letter) => (
-                      <span
-                        key={letter}
-                        className="flex-1"
-                        style={{ backgroundColor: PIP_COLORS[letter] }}
-                      />
-                    ),
-                  )}
+                  {WUBRG_ORDER.filter((letter) =>
+                    deckCard.card.colorIdentity.includes(letter),
+                  ).map((letter) => (
+                    <span
+                      key={letter}
+                      className="flex-1"
+                      style={{ backgroundColor: PIP_COLORS[letter] }}
+                    />
+                  ))}
                 </div>
                 <p className="text-sm font-medium text-muted">
-                  Commander{commanderDeckCards.length > 1 && isActive ? " (Active)" : ""}
+                  Commander
+                  {commanderDeckCards.length > 1 && isActive ? " (Active)" : ""}
                 </p>
                 <p className="text-lg font-medium">
-                  <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
+                  <CardName
+                    name={deckCard.card.name}
+                    oracleText={deckCard.card.oracleText}
+                  />
                   {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                     <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
                       Not owned - {formatUsd(deckCard.card.priceUsd)}
@@ -942,18 +1080,26 @@ export default function DeckPage() {
                     disabled={switchingCardId === deckCard.cardId}
                     onClick={() => handleSwitchCommander(deckCard.cardId)}
                   >
-                    {switchingCardId === deckCard.cardId ? "Switching..." : "Make active"}
+                    {switchingCardId === deckCard.cardId
+                      ? "Switching..."
+                      : "Make active"}
                   </Button>
                 ) : null}
                 <Button
                   variant="secondary"
                   className="ml-2 mt-2 px-4 py-1 text-xs"
                   onClick={() => {
-                    setChangingFromCardId(changingFromCardId === deckCard.cardId ? null : deckCard.cardId);
+                    setChangingFromCardId(
+                      changingFromCardId === deckCard.cardId
+                        ? null
+                        : deckCard.cardId,
+                    );
                     setCommanderQuery("");
                   }}
                 >
-                  {changingFromCardId === deckCard.cardId ? "Cancel" : "Change commander"}
+                  {changingFromCardId === deckCard.cardId
+                    ? "Cancel"
+                    : "Change commander"}
                 </Button>
               </div>
             );
@@ -963,7 +1109,9 @@ export default function DeckPage() {
 
       {changingFromCardId ? (
         <div className="card flex flex-col gap-3">
-          <p className="text-sm font-medium text-muted">Choose a new commander from your collection</p>
+          <p className="text-sm font-medium text-muted">
+            Choose a new commander from your collection
+          </p>
           <input
             type="search"
             value={commanderQuery}
@@ -976,15 +1124,21 @@ export default function DeckPage() {
               <li className="text-sm text-muted">No owned commanders match.</li>
             ) : (
               commanderCandidates.map((candidate) => (
-                <li key={candidate.id} className="flex items-center justify-between gap-4 text-sm">
+                <li
+                  key={candidate.id}
+                  className="flex items-center justify-between gap-4 text-sm"
+                >
                   <span>
-                    {candidate.name} <span className="text-muted">- {candidate.type}</span>
+                    {candidate.name}{" "}
+                    <span className="text-muted">- {candidate.type}</span>
                   </span>
                   <Button
                     variant="secondary"
                     className="px-4 py-1 text-xs"
                     disabled={isChangingCommander}
-                    onClick={() => handleChangeCommander(changingFromCardId, candidate.id)}
+                    onClick={() =>
+                      handleChangeCommander(changingFromCardId, candidate.id)
+                    }
                   >
                     {isChangingCommander ? "Changing..." : "Use"}
                   </Button>
@@ -998,7 +1152,11 @@ export default function DeckPage() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       {deck.cards.length === 0 ? (
-        <Button onClick={handleBuildDeck} disabled={isBuilding} className="self-start px-7 py-3">
+        <Button
+          onClick={handleBuildDeck}
+          disabled={isBuilding}
+          className="self-start px-7 py-3"
+        >
           {isBuilding ? "Building..." : "Build deck"}
         </Button>
       ) : (
@@ -1012,7 +1170,8 @@ export default function DeckPage() {
               deck.gradeGoal &&
               (!deck.goal?.trim() || deck.gradeGoal === deck.goal.trim()) &&
               deck.gradeBreakdown &&
-              deck.gradeSignature === deckSignature(deck.commanderCardId, deck.cards)
+              deck.gradeSignature ===
+                deckSignature(deck.commanderCardId, deck.cards)
                 ? {
                     score: deck.gradeScore,
                     goal: deck.gradeGoal,
@@ -1026,9 +1185,13 @@ export default function DeckPage() {
           />
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm">
-              <span className="font-medium">Estimated price:</span> {formatUsd(deckPrice.totalUsd)}
+              <span className="font-medium">Estimated price:</span>{" "}
+              {formatUsd(deckPrice.totalUsd)}
               {deckPrice.unpricedCount > 0 ? (
-                <span className="text-muted"> ({deckPrice.unpricedCount} cards unpriced)</span>
+                <span className="text-muted">
+                  {" "}
+                  ({deckPrice.unpricedCount} cards unpriced)
+                </span>
               ) : null}
             </p>
             <div className="flex gap-2">
@@ -1038,7 +1201,9 @@ export default function DeckPage() {
                 disabled={isKeepingOwned}
                 onClick={handleKeepOwnedOnly}
               >
-                {isKeepingOwned ? "Updating..." : "Update deck with only owned cards"}
+                {isKeepingOwned
+                  ? "Updating..."
+                  : "Update deck with only owned cards"}
               </Button>
               {massEntryUrl ? (
                 <LinkButton
@@ -1055,7 +1220,9 @@ export default function DeckPage() {
                 <Button
                   variant="secondary"
                   className="px-4 py-1 text-xs"
-                  onClick={() => navigator.clipboard.writeText(formatBuyListText(buyList))}
+                  onClick={() =>
+                    navigator.clipboard.writeText(formatBuyListText(buyList))
+                  }
                 >
                   Copy buy list
                 </Button>
@@ -1070,7 +1237,9 @@ export default function DeckPage() {
               </Button>
             </div>
           </div>
-          {keepOwnedNotice ? <p className="text-sm text-muted">{keepOwnedNotice}</p> : null}
+          {keepOwnedNotice ? (
+            <p className="text-sm text-muted">{keepOwnedNotice}</p>
+          ) : null}
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border">
@@ -1089,7 +1258,10 @@ export default function DeckPage() {
                     <span className="mr-2 inline-block">
                       <ColorIdentityPips colors={deckCard.card.colorIdentity} />
                     </span>
-                    <CardName name={deckCard.card.name} oracleText={deckCard.card.oracleText} />
+                    <CardName
+                      name={deckCard.card.name}
+                      oracleText={deckCard.card.oracleText}
+                    />
                     {deckCard.isCommander ? " (Commander)" : ""}
                     {collectionCards && !ownedCardIds.has(deckCard.cardId) ? (
                       <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
@@ -1101,18 +1273,32 @@ export default function DeckPage() {
                     ) : null}
                   </td>
                   <td className="py-2 pr-4">
-                    {deckCard.card.manaCost ? <ManaCost value={deckCard.card.manaCost} /> : "-"}
+                    {deckCard.card.manaCost ? (
+                      <ManaCost value={deckCard.card.manaCost} />
+                    ) : (
+                      "-"
+                    )}
                   </td>
                   <td className="py-2 pr-4">{deckCard.card.type}</td>
-                  <td className="py-2 pr-4">{formatUsd(deckCard.card.priceUsd)}</td>
+                  <td className="py-2 pr-4">
+                    {formatUsd(deckCard.card.priceUsd)}
+                  </td>
                   <td className="py-2 pr-4">
                     {isBasicLand(deckCard.card) ? (
                       <div className="flex items-center gap-2">
                         <Button
                           variant="secondary"
                           className="px-2 py-0.5 text-xs"
-                          disabled={updatingCardId === deckCard.cardId || deckCard.quantity <= 1}
-                          onClick={() => handleUpdateQuantity(deckCard.cardId, deckCard.quantity - 1)}
+                          disabled={
+                            updatingCardId === deckCard.cardId ||
+                            deckCard.quantity <= 1
+                          }
+                          onClick={() =>
+                            handleUpdateQuantity(
+                              deckCard.cardId,
+                              deckCard.quantity - 1,
+                            )
+                          }
                         >
                           -
                         </Button>
@@ -1121,7 +1307,12 @@ export default function DeckPage() {
                           variant="secondary"
                           className="px-2 py-0.5 text-xs"
                           disabled={updatingCardId === deckCard.cardId}
-                          onClick={() => handleUpdateQuantity(deckCard.cardId, deckCard.quantity + 1)}
+                          onClick={() =>
+                            handleUpdateQuantity(
+                              deckCard.cardId,
+                              deckCard.quantity + 1,
+                            )
+                          }
                         >
                           +
                         </Button>
@@ -1138,7 +1329,9 @@ export default function DeckPage() {
                         disabled={removingCardId === deckCard.cardId}
                         onClick={() => handleRemoveCard(deckCard.cardId)}
                       >
-                        {removingCardId === deckCard.cardId ? "Removing..." : "Remove"}
+                        {removingCardId === deckCard.cardId
+                          ? "Removing..."
+                          : "Remove"}
                       </Button>
                     )}
                   </td>
@@ -1147,9 +1340,9 @@ export default function DeckPage() {
             </tbody>
           </table>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Deck description</p>
+          <CollapsibleCard
+            title="Deck description"
+            actions={
               <Button
                 onClick={handleGetDescription}
                 disabled={isDescribing}
@@ -1161,33 +1354,40 @@ export default function DeckPage() {
                     ? "Re-request description"
                     : "Get description"}
               </Button>
-            </div>
+            }
+          >
             {deck.description ? <Markdown>{deck.description}</Markdown> : null}
-          </div>
+          </CollapsibleCard>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Deck critique</p>
-              <Button onClick={handleGetCritique} disabled={isCritiquing} className="self-start px-5 py-2 text-sm">
+          <CollapsibleCard
+            title="Deck critique"
+            actions={
+              <Button
+                onClick={handleGetCritique}
+                disabled={isCritiquing}
+                className="self-start px-5 py-2 text-sm"
+              >
                 {isCritiquing
                   ? "Getting critique..."
                   : deck.critique
                     ? "Re-request critique"
                     : "Get critique and grade"}
               </Button>
-            </div>
+            }
+          >
             {!deck.goal ? (
               <p className="text-xs text-muted">
-                No deck goal set, so the critique works out the deck&apos;s win condition and grades against that. Set a
-                goal in the version history above to grade against your own.
+                No deck goal set, so the critique works out the deck&apos;s win
+                condition and grades against that. Set a goal in the version
+                history above to grade against your own.
               </p>
             ) : null}
             {deck.critique ? <Markdown>{deck.critique}</Markdown> : null}
-          </div>
+          </CollapsibleCard>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Tokens and counters</p>
+          <CollapsibleCard
+            title="Tokens and counters"
+            actions={
               <Button
                 onClick={handleEvaluateTokens}
                 disabled={isEvaluatingTokens}
@@ -1199,31 +1399,41 @@ export default function DeckPage() {
                     ? "Re-evaluate tokens/counters"
                     : "Evaluate tokens/counters"}
               </Button>
-            </div>
+            }
+          >
             {tokenRecommendations?.length === 0 ? (
-              <p className="text-sm text-muted">This deck doesn&apos;t appear to make or use tokens or counters.</p>
+              <p className="text-sm text-muted">
+                This deck doesn&apos;t appear to make or use tokens or counters.
+              </p>
             ) : null}
             {tokenRecommendations && tokenRecommendations.length > 0 ? (
               <ul className="flex flex-col gap-3 text-sm">
                 {tokenRecommendations.map((recommendation) => (
-                  <li key={`${recommendation.kind}-${recommendation.name}`} className="flex flex-col gap-1">
+                  <li
+                    key={`${recommendation.kind}-${recommendation.name}`}
+                    className="flex flex-col gap-1"
+                  >
                     <p>
                       <span className="font-medium">
                         {recommendation.quantity} x {recommendation.name}
                       </span>{" "}
-                      <span className="text-xs text-muted">({recommendation.kind})</span>
+                      <span className="text-xs text-muted">
+                        ({recommendation.kind})
+                      </span>
                     </p>
                     <p className="text-muted">{recommendation.reason}</p>
-                    <p className="text-xs text-muted">From: {recommendation.cards.join(", ")}</p>
+                    <p className="text-xs text-muted">
+                      From: {recommendation.cards.join(", ")}
+                    </p>
                   </li>
                 ))}
               </ul>
             ) : null}
-          </div>
+          </CollapsibleCard>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Card suggestions</p>
+          <CollapsibleCard
+            title="Card suggestions"
+            actions={
               <div className="flex gap-2">
                 <Button
                   onClick={() => handleGetSuggestions(!ownedOnly)}
@@ -1233,7 +1443,8 @@ export default function DeckPage() {
                   {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
                 </Button>
               </div>
-            </div>
+            }
+          >
             <label className="flex items-center justify-end gap-2 text-sm">
               <input
                 type="checkbox"
@@ -1261,7 +1472,9 @@ export default function DeckPage() {
               <Button
                 variant="secondary"
                 onClick={() => handleGetSuggestions(true, Number(budgetInput))}
-                disabled={isSuggesting || ownedOnly || !(Number(budgetInput) > 0)}
+                disabled={
+                  isSuggesting || ownedOnly || !(Number(budgetInput) > 0)
+                }
                 className="px-5 py-2 text-sm"
               >
                 Best cards for budget
@@ -1274,13 +1487,18 @@ export default function DeckPage() {
                 disabled={isAddingAll || addingCardId !== null}
                 className="self-start px-4 py-1 text-xs"
               >
-                {isAddingAll ? "Adding..." : `Add all (${suggestedCards.length})`}
+                {isAddingAll
+                  ? "Adding..."
+                  : `Add all (${suggestedCards.length})`}
               </Button>
             ) : null}
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
                 {suggestedCards.map(({ card, tag, reason }) => (
-                  <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
+                  <li
+                    key={card.id}
+                    className="flex items-center justify-between gap-4 text-sm"
+                  >
                     <span>
                       <span className="mr-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
                         {tag}
@@ -1305,7 +1523,9 @@ export default function DeckPage() {
                         )}{" "}
                         - {card.type}
                       </span>
-                      <span className="ml-2 font-medium">{formatUsd(card.priceUsd)}</span>
+                      <span className="ml-2 font-medium">
+                        {formatUsd(card.priceUsd)}
+                      </span>
                       <span className="block text-xs text-muted">{reason}</span>
                     </span>
                     <Button
@@ -1320,21 +1540,24 @@ export default function DeckPage() {
                 ))}
               </ul>
             ) : null}
-          </div>
+          </CollapsibleCard>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Swap in new cards</p>
+          <CollapsibleCard
+            title="Swap in new cards"
+            actions={
               <Button
                 onClick={handleGetReplacements}
-                disabled={isFindingReplacements || selectedNewCardIds.size === 0}
+                disabled={
+                  isFindingReplacements || selectedNewCardIds.size === 0
+                }
                 className="self-start px-5 py-2 text-sm"
               >
                 {isFindingReplacements
                   ? "Finding replacements..."
                   : `Recommend cuts${selectedNewCardIds.size > 0 ? ` (${selectedNewCardIds.size})` : ""}`}
               </Button>
-            </div>
+            }
+          >
             {collectionCards ? (
               <>
                 <input
@@ -1356,7 +1579,10 @@ export default function DeckPage() {
                             checked={selectedNewCardIds.has(card.id)}
                             onChange={() => toggleNewCard(card.id)}
                           />
-                          <CardName name={card.name} oracleText={card.oracleText} />
+                          <CardName
+                            name={card.name}
+                            oracleText={card.oracleText}
+                          />
                           <span className="text-muted">- {card.type}</span>
                         </label>
                       </li>
@@ -1370,13 +1596,24 @@ export default function DeckPage() {
             {replacements.length > 0 ? (
               <ul className="flex flex-col gap-2 border-t border-border pt-3">
                 {replacements.map((swap) => (
-                  <li key={swap.add.id} className="flex items-center justify-between gap-4 text-sm">
+                  <li
+                    key={swap.add.id}
+                    className="flex items-center justify-between gap-4 text-sm"
+                  >
                     <span>
                       <span className="text-muted">Cut </span>
-                      <CardName name={swap.remove.name} oracleText={swap.remove.oracleText} />
+                      <CardName
+                        name={swap.remove.name}
+                        oracleText={swap.remove.oracleText}
+                      />
                       <span className="text-muted"> for </span>
-                      <CardName name={swap.add.name} oracleText={swap.add.oracleText} />
-                      <span className="block text-xs text-muted">{swap.reason}</span>
+                      <CardName
+                        name={swap.add.name}
+                        oracleText={swap.add.oracleText}
+                      />
+                      <span className="block text-xs text-muted">
+                        {swap.reason}
+                      </span>
                     </span>
                     <Button
                       variant="secondary"
@@ -1390,12 +1627,12 @@ export default function DeckPage() {
                 ))}
               </ul>
             ) : null}
-          </div>
+          </CollapsibleCard>
 
-          <div className="card flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm font-medium text-muted">Add from collection</p>
-              {collectionCards ? (
+          <CollapsibleCard
+            title="Add from collection"
+            actions={
+              collectionCards ? (
                 <Button
                   variant="secondary"
                   onClick={handleLoadCollection}
@@ -1404,8 +1641,9 @@ export default function DeckPage() {
                 >
                   {isLoadingCollection ? "Refreshing..." : "Refresh"}
                 </Button>
-              ) : null}
-            </div>
+              ) : null
+            }
+          >
             {!collectionCards && isLoadingCollection ? (
               <p className="text-sm text-muted">Loading your collection...</p>
             ) : null}
@@ -1423,22 +1661,30 @@ export default function DeckPage() {
                 ) : (
                   <ul className="flex flex-col gap-2">
                     {availableCollectionCards.map((card) => (
-                      <li key={card.id} className="flex items-center justify-between gap-4 text-sm">
+                      <li
+                        key={card.id}
+                        className="flex items-center justify-between gap-4 text-sm"
+                      >
                         <span>
-                          <CardName name={card.name} oracleText={card.oracleText} />
+                          <CardName
+                            name={card.name}
+                            oracleText={card.oracleText}
+                          />
                           {otherDeckCardIds.has(card.id) ? (
-                            <span className="tag-badge ml-2">In another deck</span>
+                            <span className="tag-badge ml-2">
+                              In another deck
+                            </span>
                           ) : null}
                           <span className="text-muted">
                             {card.manaCost ? (
-                          <>
-                            {" "}
-                            - <ManaCost value={card.manaCost} />
-                          </>
-                        ) : (
-                          ""
-                        )}{" "}
-                        - {card.type}
+                              <>
+                                {" "}
+                                - <ManaCost value={card.manaCost} />
+                              </>
+                            ) : (
+                              ""
+                            )}{" "}
+                            - {card.type}
                           </span>
                         </span>
                         <Button
@@ -1455,7 +1701,7 @@ export default function DeckPage() {
                 )}
               </>
             ) : null}
-          </div>
+          </CollapsibleCard>
         </>
       )}
     </main>
