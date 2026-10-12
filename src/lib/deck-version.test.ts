@@ -153,6 +153,89 @@ describe("saveDeckVersion", () => {
   });
 });
 
+describe("saveDeckVersion grading", () => {
+  const scores = [
+    "Goal execution",
+    "Consistency",
+    "Mana development",
+    "Card advantage",
+    "Interaction",
+    "Resilience",
+    "Mana base",
+  ]
+    .map((category) => `${category} :: 80 :: ok`)
+    .concat("SUMMARY :: Fine.")
+    .join("\n");
+
+  beforeEach(() => {
+    deckFindUniqueMock.mockReset();
+    versionFindFirstMock.mockReset();
+    versionCreateMock.mockReset();
+    completeMock.mockReset();
+  });
+
+  it("stores a grade on the version when the deck has a goal", async () => {
+    deckFindUniqueMock.mockResolvedValue(stored([row("atraxa", 1, true), row("sol-ring")], "atraxa", { goal: "Combo off" }));
+    versionFindFirstMock.mockResolvedValue(null);
+    versionCreateMock.mockResolvedValue({ id: "v1" });
+    completeMock.mockResolvedValue(scores);
+
+    await saveDeckVersion("deck_1", "Initial build");
+
+    const data = versionCreateMock.mock.calls[0][0].data;
+    expect(data.gradeScore).toBe(80);
+    expect(data.gradeGoal).toBe("Combo off");
+    expect(data.gradeBreakdown).toHaveLength(7);
+    expect(completeMock.mock.calls[0][0]).toContain("Goal: Combo off");
+  });
+
+  it("anchors the grade to the latest graded version only when the goal matches", async () => {
+    const breakdown = [{ category: "Interaction", score: 55, note: "" }];
+    const earlier = (gradeGoal: string) =>
+      stored([row("atraxa", 1, true), row("sol-ring")], "atraxa", {
+        number: 1,
+        gradeScore: 60,
+        gradeGoal,
+        gradeBreakdown: breakdown,
+        gradeSummary: "",
+      });
+    deckFindUniqueMock.mockResolvedValue(stored([row("atraxa", 1, true), row("birds")], "atraxa", { goal: "Combo off" }));
+    versionCreateMock.mockResolvedValue({ id: "v2" });
+    completeMock.mockResolvedValue(scores);
+
+    versionFindFirstMock.mockResolvedValue(earlier("Combo off"));
+    await saveDeckVersion("deck_1", "Swap");
+    expect(completeMock.mock.calls[0][0]).toContain("- Interaction: 55");
+    expect(completeMock.mock.calls[0][0]).toContain("Added: BIRDS");
+
+    versionFindFirstMock.mockResolvedValue(earlier("Stax"));
+    await saveDeckVersion("deck_1", "Swap");
+    expect(completeMock.mock.calls[1][0]).not.toContain("graded before");
+  });
+
+  it("still saves the version, ungraded, when grading fails", async () => {
+    deckFindUniqueMock.mockResolvedValue(stored([row("atraxa", 1, true), row("sol-ring")], "atraxa", { goal: "Combo off" }));
+    versionFindFirstMock.mockResolvedValue(null);
+    versionCreateMock.mockResolvedValue({ id: "v1" });
+    completeMock.mockResolvedValue("not a grade");
+
+    await saveDeckVersion("deck_1", "Initial build");
+
+    const data = versionCreateMock.mock.calls[0][0].data;
+    expect(data.gradeScore).toBeUndefined();
+  });
+
+  it("skips grading when the deck has no goal", async () => {
+    deckFindUniqueMock.mockResolvedValue(stored([row("atraxa", 1, true), row("sol-ring")]));
+    versionFindFirstMock.mockResolvedValue(null);
+    versionCreateMock.mockResolvedValue({ id: "v1" });
+
+    await saveDeckVersion("deck_1", "Initial build");
+
+    expect(completeMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("listDeckVersions", () => {
   beforeEach(() => versionFindManyMock.mockReset());
 

@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { gradeDeck, type DeckGrade, type GradeCategory } from "@/lib/deck-grade";
+import type { Prisma } from "@/generated/prisma/client";
 
 export class DeckVersionError extends Error {}
 
@@ -23,6 +25,13 @@ export interface DeckVersionChanges {
   commander: { from: string | null; to: string | null } | null;
 }
 
+export interface VersionGrade {
+  score: number;
+  goal: string;
+  breakdown: GradeCategory[];
+  summary: string;
+}
+
 export interface DeckVersionSummary {
   id: string;
   number: number;
@@ -31,6 +40,8 @@ export interface DeckVersionSummary {
   cardCount: number;
   /** Changes since the previous version; for version 1 everything is "added". */
   changes: DeckVersionChanges;
+  /** Null when the version was never graded (no goal set, or grading failed). */
+  grade: VersionGrade | null;
 }
 
 /**
@@ -119,6 +130,82 @@ async function loadLatestVersion(deckId: string) {
   });
 }
 
+type GradedVersionFields = {
+  gradeScore: number | null;
+  gradeGoal: string | null;
+  gradeBreakdown: Prisma.JsonValue | null;
+  gradeSummary: string | null;
+};
+
+function gradeOf(version: GradedVersionFields): VersionGrade | null {
+  if (version.gradeScore === null || version.gradeGoal === null || !Array.isArray(version.gradeBreakdown)) {
+    return null;
+  }
+  return {
+    score: version.gradeScore,
+    goal: version.gradeGoal,
+    breakdown: version.gradeBreakdown as unknown as GradeCategory[],
+    summary: version.gradeSummary ?? "",
+  };
+}
+
+function gradeColumns(grade: DeckGrade, goal: string) {
+  return {
+    gradeScore: grade.score,
+    gradeGoal: goal,
+    gradeBreakdown: grade.breakdown as unknown as Prisma.InputJsonValue,
+    gradeSummary: grade.summary,
+  };
+}
+
+function formatCard(card: { name: string; quantity: number }): string {
+  return card.quantity > 1 ? `${card.name} x${card.quantity}` : card.name;
+}
+
+/**
+ * Grades a snapshot against `goal`. When the closest earlier graded version
+ * was graded against the same goal, its scores and the card changes since
+ * then go into the prompt so the new grade moves only where the changes
+ * justify it; a different goal makes old scores meaningless, so it's ignored.
+ */
+async function gradeSnapshot(
+  snapshot: DeckSnapshot,
+  goal: string,
+  earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
+): Promise<DeckGrade> {
+  const comparable = earlier?.grade && earlier.grade.goal === goal ? earlier : null;
+  const changes = comparable ? diffSnapshots(comparable.snapshot, snapshot) : null;
+
+  return gradeDeck({
+    goal,
+    commanderName: snapshot.commanderName ?? "none",
+    cards: snapshot.cards.filter((card) => !card.isCommander),
+    previous:
+      comparable?.grade && changes
+        ? {
+            score: comparable.grade.score,
+            breakdown: comparable.grade.breakdown,
+            added: changes.added.map(formatCard),
+            removed: changes.removed.map(formatCard),
+          }
+        : null,
+  });
+}
+
+/** The closest version before `number` that has a grade, as a comparison baseline. */
+async function loadEarlierGraded(deckId: string, beforeNumber?: number) {
+  const version = await prisma.deckVersion.findFirst({
+    where: {
+      deckId,
+      gradeScore: { not: null },
+      ...(beforeNumber !== undefined ? { number: { lt: beforeNumber } } : {}),
+    },
+    orderBy: { number: "desc" },
+    include: { commanderCard: true, cards: { include: { card: true } } },
+  });
+  return version ? { snapshot: snapshotOf(version), grade: gradeOf(version) } : null;
+}
+
 function formatChangesForPrompt(changes: DeckVersionChanges): string {
   const lines: string[] = [];
   if (changes.commander) {
@@ -183,12 +270,25 @@ export async function saveDeckVersion(deckId: string, description: string) {
     throw new DeckVersionError("No changes since the last version");
   }
 
+  // Grading is a bonus on top of saving: if the model is down or answers
+  // unreadably, the version is still saved (ungraded) and can be graded later.
+  let gradeData: ReturnType<typeof gradeColumns> | null = null;
+  const goal = deck.goal?.trim();
+  if (goal) {
+    try {
+      gradeData = gradeColumns(await gradeSnapshot(snapshotOf(deck), goal, await loadEarlierGraded(deckId)), goal);
+    } catch {
+      gradeData = null;
+    }
+  }
+
   return prisma.deckVersion.create({
     data: {
       deckId,
       number: (latest?.number ?? 0) + 1,
       description: trimmed,
       commanderCardId: deck.commanderCardId,
+      ...gradeData,
       cards: {
         create: deck.cards.map((deckCard) => ({
           cardId: deckCard.cardId,
@@ -198,6 +298,37 @@ export async function saveDeckVersion(deckId: string, description: string) {
       },
     },
   });
+}
+
+/**
+ * (Re)grades a saved version against the deck's current goal and stores the
+ * result on it. Unlike saving, failures surface to the caller.
+ */
+export async function gradeDeckVersion(deckId: string, versionId: string): Promise<VersionGrade> {
+  const version = await prisma.deckVersion.findUnique({
+    where: { id: versionId },
+    include: { commanderCard: true, cards: { include: { card: true } } },
+  });
+
+  if (!version || version.deckId !== deckId) {
+    throw new DeckVersionError("Version not found");
+  }
+
+  const deck = await loadDeck(deckId);
+  const goal = deck.goal?.trim();
+  if (!goal) {
+    throw new DeckVersionError("Set a goal for this deck before grading it");
+  }
+
+  let grade: DeckGrade;
+  try {
+    grade = await gradeSnapshot(snapshotOf(version), goal, await loadEarlierGraded(deckId, version.number));
+  } catch (error) {
+    throw new DeckVersionError(error instanceof Error ? error.message : "Couldn't grade this version");
+  }
+
+  await prisma.deckVersion.update({ where: { id: versionId }, data: gradeColumns(grade, goal) });
+  return { score: grade.score, goal, breakdown: grade.breakdown, summary: grade.summary };
 }
 
 /** Versions newest first, each with its diff against the version before it. */
@@ -215,6 +346,7 @@ export async function listDeckVersions(deckId: string): Promise<DeckVersionSumma
     createdAt: version.createdAt,
     cardCount: version.cards.reduce((sum, card) => sum + card.quantity, 0),
     changes: diffSnapshots(index > 0 ? snapshotOf(versions[index - 1]) : null, snapshotOf(version)),
+    grade: gradeOf(version),
   }));
 
   return summaries.reverse();
@@ -258,6 +390,13 @@ export async function restoreDeckVersion(deckId: string, versionId: string) {
         number: (latest?.number ?? 0) + 1,
         description: `Restored version ${version.number}`,
         commanderCardId: version.commanderCardId,
+        // Identical cards, so the restored version's grade still applies.
+        gradeScore: version.gradeScore,
+        gradeGoal: version.gradeGoal,
+        gradeSummary: version.gradeSummary,
+        ...(version.gradeBreakdown !== null
+          ? { gradeBreakdown: version.gradeBreakdown as Prisma.InputJsonValue }
+          : {}),
         cards: {
           create: version.cards.map((card) => ({
             cardId: card.cardId,

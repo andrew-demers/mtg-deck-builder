@@ -40,14 +40,16 @@ export async function GET(
   return NextResponse.json(deck);
 }
 
-interface RenameDeckBody {
+interface UpdateDeckBody {
   name?: string;
+  goal?: string;
 }
 
 /**
- * PATCH /api/decks/[id] - session-scoped. Renames the deck. 404 if the deck
- * doesn't exist, 403 if it belongs to a different user, 400 if `name` is
- * missing or blank.
+ * PATCH /api/decks/[id] - session-scoped. Renames the deck and/or sets the
+ * `goal` its versions are graded against (a blank goal clears it). 404 if
+ * the deck doesn't exist, 403 if it belongs to a different user, 400 if
+ * neither field is given or `name` is blank.
  */
 export async function PATCH(
   request: Request,
@@ -72,16 +74,31 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const body = (await request.json().catch(() => null)) as RenameDeckBody | null;
-  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const body = (await request.json().catch(() => null)) as UpdateDeckBody | null;
+  const data: { name?: string; goal?: string | null } = {};
 
-  if (!name) {
+  if (body?.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      return NextResponse.json({ error: "name is required" }, { status: 400 });
+    }
+    data.name = name;
+  }
+
+  if (body?.goal !== undefined) {
+    if (typeof body.goal !== "string") {
+      return NextResponse.json({ error: "goal must be a string" }, { status: 400 });
+    }
+    data.goal = body.goal.trim() || null;
+  }
+
+  if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
 
   const updatedDeck = await prisma.deck.update({
     where: { id },
-    data: { name },
+    data,
     include: { commanderCard: true, cards: { include: { card: true } } },
   });
 

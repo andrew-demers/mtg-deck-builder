@@ -49,6 +49,7 @@ interface DeckData {
   cards: DeckCardData[];
   critique: string | null;
   description: string | null;
+  goal: string | null;
 }
 
 interface SuggestedCard {
@@ -964,6 +965,12 @@ export default function DeckPage() {
       ) : (
         <>
           <CardStats entries={deck.cards} label="cards in deck" />
+          <DeckVersions
+            deckId={deckId}
+            goal={deck.goal}
+            onGoalSaved={(updated) => setDeck(updated as DeckData)}
+            onRestored={(restored) => setDeck(restored as DeckData)}
+          />
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm">
               <span className="font-medium">Estimated price:</span> {formatUsd(deckPrice.totalUsd)}
@@ -1105,8 +1112,6 @@ export default function DeckPage() {
             {deck.description ? <Markdown>{deck.description}</Markdown> : null}
           </div>
 
-          <DeckVersions deckId={deckId} onRestored={(restored) => setDeck(restored as DeckData)} />
-
           <div className="card flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
               <p className="text-sm font-medium text-muted">Deck critique</p>
@@ -1126,19 +1131,11 @@ export default function DeckPage() {
               <p className="text-sm font-medium text-muted">Card suggestions</p>
               <div className="flex gap-2">
                 <Button
-                  variant="secondary"
-                  onClick={() => handleGetSuggestions(false)}
-                  disabled={isSuggesting}
-                  className="self-start px-5 py-2 text-sm"
-                >
-                  {isSuggesting ? "Getting suggestions..." : "Use cards I own"}
-                </Button>
-                <Button
                   onClick={() => handleGetSuggestions(true)}
                   disabled={isSuggesting}
                   className="self-start px-5 py-2 text-sm"
                 >
-                  {isSuggesting ? "Getting suggestions..." : "Include cards I don't own"}
+                  {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
                 </Button>
               </div>
             </div>
