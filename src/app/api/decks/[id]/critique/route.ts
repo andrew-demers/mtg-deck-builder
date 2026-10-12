@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { critiqueDeck, DeckCritiqueError } from "@/lib/deck-critique";
+import { Prisma } from "@/generated/prisma/client";
+import { critiqueAndGradeDeck, DeckCritiqueError } from "@/lib/deck-critique";
 
 /**
  * POST /api/decks/[id]/critique - session-scoped. Asks the LLM to critique a
- * deck the caller owns and persists the result onto `Deck.critique`. 404 if
+ * deck the caller owns and persists the result onto `Deck.critique`. When the deck has a goal the
+ * same call also grades it, and the grade is stored on the deck too. 404 if
  * the deck doesn't exist, 403 if it belongs to a different user, 400 if the
  * deck isn't fully built yet (total `DeckCard` quantity must be exactly 100).
  */
@@ -44,9 +46,9 @@ export async function POST(
     );
   }
 
-  let critique: string;
+  let result: Awaited<ReturnType<typeof critiqueAndGradeDeck>>;
   try {
-    critique = await critiqueDeck(id);
+    result = await critiqueAndGradeDeck(id);
   } catch (error) {
     if (error instanceof DeckCritiqueError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
@@ -56,7 +58,18 @@ export async function POST(
 
   const updatedDeck = await prisma.deck.update({
     where: { id },
-    data: { critique },
+    data: {
+      critique: result.critique,
+      // Always overwritten so a no-goal or unreadable result never leaves an
+      // older grade sitting next to a newer critique.
+      gradeScore: result.grade?.score ?? null,
+      gradeGoal: result.grade?.goal ?? null,
+      gradeBreakdown: result.grade
+        ? (result.grade.breakdown as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
+      gradeSummary: result.grade?.summary ?? null,
+      gradeSignature: result.grade?.signature ?? null,
+    },
     include: { commanderCard: true, cards: { include: { card: true } } },
   });
 

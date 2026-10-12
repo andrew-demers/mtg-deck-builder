@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGradePrompt,
+  CRITIQUE_MARKER,
   DeckGradeError,
   GRADE_CATEGORIES,
   letterGrade,
   parseGrade,
+  parseGradeAndCritique,
 } from "@/lib/deck-grade";
 
 function completion(scores: number[], summary = "SUMMARY :: Strong ramp. Add removal.") {
@@ -83,5 +85,37 @@ describe("buildGradePrompt", () => {
 describe("letterGrade", () => {
   it("maps scores to letters", () => {
     expect([100, 93, 88, 80, 72, 61, 10].map(letterGrade)).toEqual(["A+", "A", "B+", "B-", "C-", "D", "F"]);
+  });
+});
+
+describe("parseGradeAndCritique", () => {
+  it("splits the scores from the critique after the marker", () => {
+    const { grade, critique } = parseGradeAndCritique(
+      `${completion([70, 70, 70, 70, 70, 70, 70])}\n${CRITIQUE_MARKER}\n## Strengths\nRamp.\n`,
+    );
+
+    expect(grade?.score).toBe(70);
+    expect(critique).toBe("## Strengths\nRamp.");
+  });
+
+  it("keeps the critique when the scores can't be read", () => {
+    const { grade, critique } = parseGradeAndCritique(`garbage\n${CRITIQUE_MARKER}\nStill useful.`);
+
+    expect(grade).toBeNull();
+    expect(critique).toBe("Still useful.");
+  });
+
+  it("treats a response with no marker and no scores as the critique", () => {
+    const { grade, critique } = parseGradeAndCritique("Just prose about the deck.");
+
+    expect(grade).toBeNull();
+    expect(critique).toBe("Just prose about the deck.");
+  });
+
+  it("asks for the critique only when requested", () => {
+    const base = { goal: "g", commanderName: "c", cards: [] };
+
+    expect(buildGradePrompt({ ...base, withCritique: true })).toContain(CRITIQUE_MARKER);
+    expect(buildGradePrompt(base)).not.toContain(CRITIQUE_MARKER);
   });
 });

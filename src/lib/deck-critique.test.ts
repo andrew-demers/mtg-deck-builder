@@ -5,6 +5,7 @@ vi.mock("@/lib/prisma", () => ({
     deck: {
       findUnique: vi.fn(),
     },
+    deckVersion: { findFirst: vi.fn() },
   },
 }));
 
@@ -14,7 +15,7 @@ vi.mock("@/lib/llm", () => ({
 
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { critiqueDeck, DeckCritiqueError } from "@/lib/deck-critique";
+import { critiqueAndGradeDeck, critiqueDeck, DeckCritiqueError } from "@/lib/deck-critique";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
@@ -49,11 +50,7 @@ describe("critiqueDeck", () => {
     deckFindUniqueMock.mockResolvedValue({
       id: "deck_1",
       commanderCard: { name: "Atraxa, Praetors' Voice" },
-      cards: [
-        deckCard("Atraxa, Praetors' Voice", 1, true),
-        deckCard("Sol Ring"),
-        deckCard("Plains", 40),
-      ],
+      cards: [deckCard("Atraxa, Praetors' Voice", 1, true), deckCard("Sol Ring"), deckCard("Plains", 40)],
     });
     const completeMock = vi.fn().mockResolvedValue("This deck has a strong ramp package.");
     getLlmProviderMock.mockReturnValue({ complete: completeMock });
@@ -66,5 +63,59 @@ describe("critiqueDeck", () => {
     expect(prompt).toContain("Atraxa, Praetors' Voice");
     expect(prompt).toContain("Sol Ring");
     expect(prompt).toContain("Plains");
+  });
+});
+
+describe("critiqueAndGradeDeck", () => {
+  const scores = [
+    "Goal execution",
+    "Consistency",
+    "Mana development",
+    "Card advantage",
+    "Interaction",
+    "Resilience",
+    "Mana base",
+  ]
+    .map((category) => `${category} :: 80 :: ok`)
+    .join("\n");
+
+  function deckWith(goal: string | null) {
+    return {
+      id: "deck_1",
+      goal,
+      commanderCardId: "k",
+      commanderCard: { name: "Kinnan" },
+      cards: [
+        { cardId: "k", quantity: 1, isCommander: true, card: { name: "Kinnan" } },
+        { cardId: "s", quantity: 1, isCommander: false, card: { name: "Sol Ring" } },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    deckFindUniqueMock.mockReset();
+    getLlmProviderMock.mockReset();
+    (prisma.deckVersion.findFirst as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  });
+
+  it("returns the critique and a grade from a single LLM call when the deck has a goal", async () => {
+    deckFindUniqueMock.mockResolvedValue(deckWith("Combo off"));
+    const complete = vi.fn().mockResolvedValue(`${scores}\nSUMMARY :: Fine.\n=== CRITIQUE ===\nGood ramp.`);
+    getLlmProviderMock.mockReturnValue({ complete });
+
+    const result = await critiqueAndGradeDeck("deck_1");
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result.critique).toBe("Good ramp.");
+    expect(result.grade?.score).toBe(80);
+    expect(result.grade?.goal).toBe("Combo off");
+    expect(result.grade?.signature).toBeTruthy();
+  });
+
+  it("falls back to a plain critique with no grade when the deck has no goal", async () => {
+    deckFindUniqueMock.mockResolvedValue(deckWith(null));
+    getLlmProviderMock.mockReturnValue({ complete: vi.fn().mockResolvedValue("Plain critique.") });
+
+    expect(await critiqueAndGradeDeck("deck_1")).toEqual({ critique: "Plain critique.", grade: null });
   });
 });

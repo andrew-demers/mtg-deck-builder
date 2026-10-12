@@ -3,20 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Button from "@/components/button";
 import Markdown from "@/components/markdown";
-import { letterGrade } from "@/lib/deck-grade";
+import GradePanel, { type VersionGrade } from "@/components/grade-panel";
+import { letterGrade } from "@/lib/grade-letter";
 
 interface VersionChanges {
   added: { name: string; quantity: number }[];
   removed: { name: string; quantity: number }[];
   changed: { name: string; from: number; to: number }[];
   commander: { from: string | null; to: string | null } | null;
-}
-
-interface VersionGrade {
-  score: number;
-  goal: string;
-  breakdown: { category: string; score: number; note: string }[];
-  summary: string;
 }
 
 interface DeckVersion {
@@ -33,7 +27,9 @@ interface DeckVersionsProps {
   deckId: string;
   /** What the deck is built to do; versions are graded against it. */
   goal: string | null;
-  /** Called with the refreshed deck JSON after the goal is saved. */
+  /** The deck's own grade if it is still current for the live cards and goal, else null. */
+  currentGrade: VersionGrade | null;
+  /** Called with the refreshed deck JSON after the goal is saved or the deck is graded. */
   onGoalSaved: (deck: unknown) => void;
   /** Called with the refreshed deck JSON after a version is restored. */
   onRestored: (deck: unknown) => void;
@@ -73,77 +69,6 @@ function ChangeList({ changes }: { changes: VersionChanges }) {
   );
 }
 
-function formatDelta(delta: number): string {
-  return delta > 0 ? `+${delta}` : String(delta);
-}
-
-function deltaClass(delta: number): string {
-  return delta > 0 ? "text-mana-green" : delta < 0 ? "text-danger" : "text-muted";
-}
-
-/** Strong scores read green, middling gold, weak red, matching the stats bars' palette. */
-function scoreColor(score: number): string {
-  return score >= 80 ? "var(--mana-green)" : score >= 60 ? "var(--mana-white)" : "var(--danger)";
-}
-
-function GradePanel({ grade, baseline }: { grade: VersionGrade; baseline: VersionGrade | null }) {
-  const overallDelta = baseline ? grade.score - baseline.score : null;
-
-  return (
-    <div className="flex flex-col gap-3 rounded-lg bg-background p-4">
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="flex shrink-0 flex-col items-center justify-center gap-0.5 sm:w-28">
-          <span
-            className="font-display text-5xl font-bold leading-none"
-            style={{ color: scoreColor(grade.score) }}
-          >
-            {letterGrade(grade.score)}
-          </span>
-          <span className="text-sm text-muted">{grade.score} / 100</span>
-          {overallDelta !== null ? (
-            <span className={`text-xs font-semibold ${deltaClass(overallDelta)}`}>
-              {overallDelta === 0 ? "no change" : `${formatDelta(overallDelta)} vs previous`}
-            </span>
-          ) : null}
-        </div>
-        <ul className="flex flex-1 flex-col gap-1.5">
-          {grade.breakdown.map((entry) => {
-            const before = baseline?.breakdown.find((item) => item.category === entry.category);
-            const delta = before ? entry.score - before.score : null;
-            return (
-              <li key={entry.category} className="flex items-center gap-2 text-xs">
-                <span className="w-32 shrink-0 truncate">{entry.category}</span>
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-surface">
-                  <span
-                    className="block h-full rounded-full"
-                    style={{ width: `${entry.score}%`, backgroundColor: scoreColor(entry.score) }}
-                  />
-                </span>
-                <span className="w-7 shrink-0 text-right">{entry.score}</span>
-                <span className={`w-8 shrink-0 text-right ${delta ? deltaClass(delta) : "text-muted"}`}>
-                  {delta ? formatDelta(delta) : ""}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-      {grade.summary ? <p className="border-t border-border pt-3 text-sm">{grade.summary}</p> : null}
-      <details>
-        <summary className="cursor-pointer text-xs text-muted">Why these scores</summary>
-        <dl className="mt-2 flex flex-col gap-2 text-xs">
-          {grade.breakdown.map((entry) => (
-            <div key={entry.category}>
-              <dt className="font-medium">{entry.category}</dt>
-              <dd className="text-muted">{entry.note}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
-    </div>
-  );
-}
-
 function changeSummary(changes: VersionChanges): string {
   const parts: string[] = [];
   if (changes.commander) parts.push("commander changed");
@@ -153,7 +78,64 @@ function changeSummary(changes: VersionChanges): string {
   return parts.join(", ");
 }
 
-export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: DeckVersionsProps) {
+function baselineFor(versions: DeckVersion[]): VersionGrade | null {
+  const latest = versions[0].grade;
+  const earlier = versions.slice(1).find((version) => version.grade !== null)?.grade ?? null;
+  return latest && earlier && earlier.goal === latest.goal ? earlier : null;
+}
+
+function LatestVersion({
+  version,
+  baseline,
+  goal,
+  isGrading,
+  onGrade,
+}: {
+  version: DeckVersion;
+  baseline: VersionGrade | null;
+  goal: string | null;
+  isGrading: boolean;
+  onGrade: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <span className="font-medium">
+          Latest: version {version.number}
+          <span className="ml-2 text-xs font-normal text-muted">
+            {new Date(version.createdAt).toLocaleString()} - {version.cardCount} cards
+          </span>
+        </span>
+        {goal ? (
+          <Button variant="secondary" onClick={onGrade} disabled={isGrading} className="px-4 py-1 text-xs">
+            {isGrading ? "Grading..." : version.grade ? "Re-grade" : "Grade"}
+          </Button>
+        ) : null}
+      </div>
+      {version.grade && version.grade.goal !== goal?.trim() ? (
+        <p className="text-xs text-muted">Graded against an earlier goal: {version.grade.goal}</p>
+      ) : null}
+      <Markdown>{version.description}</Markdown>
+      {version.grade ? <GradePanel grade={version.grade} baseline={baseline} /> : null}
+      {changeSummary(version.changes) ? (
+        <details>
+          <summary className="cursor-pointer text-xs text-muted">{changeSummary(version.changes)}</summary>
+          <div className="mt-1">
+            <ChangeList changes={version.changes} />
+          </div>
+        </details>
+      ) : null}
+    </div>
+  );
+}
+
+export default function DeckVersions({
+  deckId,
+  goal,
+  currentGrade,
+  onGoalSaved,
+  onRestored,
+}: DeckVersionsProps) {
   const [versions, setVersions] = useState<DeckVersion[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
@@ -164,6 +146,8 @@ export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: 
   const [isSavingGoal, setIsSavingGoal] = useState(false);
   const [isDraftingGoal, setIsDraftingGoal] = useState(false);
   const [gradingId, setGradingId] = useState<string | null>(null);
+  const [restoreId, setRestoreId] = useState("");
+  const [isGradingDeck, setIsGradingDeck] = useState(false);
 
   const loadVersions = useCallback(async () => {
     try {
@@ -277,6 +261,24 @@ export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: 
     }
   }
 
+  async function handleGradeDeck() {
+    setError(null);
+    setIsGradingDeck(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/grade`, { method: "POST" });
+      if (!response.ok) {
+        setError(await errorMessage(response, "Something went wrong grading the deck."));
+        return;
+      }
+      onGoalSaved(await response.json());
+    } catch {
+      setError("Something went wrong grading the deck.");
+    } finally {
+      setIsGradingDeck(false);
+    }
+  }
+
   async function handleGrade(version: DeckVersion) {
     setError(null);
     setGradingId(version.id);
@@ -297,6 +299,8 @@ export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: 
     }
   }
 
+  const restoreChoice = versions?.find((version) => version.id === restoreId) ?? null;
+
   async function handleRestore(version: DeckVersion) {
     if (!window.confirm(`Restore version ${version.number}? The deck's current cards will be replaced.`)) {
       return;
@@ -313,6 +317,7 @@ export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: 
         return;
       }
       onRestored(await response.json());
+      setRestoreId("");
       await loadVersions();
     } catch {
       setError("Something went wrong restoring this version.");
@@ -397,61 +402,101 @@ export default function DeckVersions({ deckId, goal, onGoalSaved, onRestored }: 
       ) : versions.length === 0 ? (
         <p className="text-sm text-muted">No versions saved yet.</p>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {versions.map((version, index) => {
-            // The next graded version down the list is the one before it in
-            // time; scores only compare when both used the same goal.
-            const earlier = versions.slice(index + 1).find((item) => item.grade !== null)?.grade ?? null;
-            const baseline = earlier && version.grade && earlier.goal === version.grade.goal ? earlier : null;
-            return (
-              <li key={version.id} className="flex flex-col gap-1 border-t border-border pt-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="font-medium">
-                    Version {version.number}
-                    <span className="ml-2 text-xs font-normal text-muted">
-                      {new Date(version.createdAt).toLocaleString()} - {version.cardCount} cards
-                    </span>
+        <>
+          {goal ? (
+            <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
+              <div className="flex items-center justify-between gap-4">
+                <span className="font-medium">
+                  Current deck
+                  <span className="ml-2 text-xs font-normal text-muted">
+                    includes any changes you haven&apos;t saved yet
                   </span>
-                  <div className="flex items-center gap-3">
-                    {goal ? (
-                      <Button
-                        variant="secondary"
-                        onClick={() => handleGrade(version)}
-                        disabled={gradingId !== null}
-                        className="px-4 py-1 text-xs"
-                      >
-                        {gradingId === version.id ? "Grading..." : version.grade ? "Re-grade" : "Grade"}
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleRestore(version)}
-                      disabled={restoringId !== null}
-                      className="px-4 py-1 text-xs"
-                    >
-                      {restoringId === version.id ? "Restoring..." : "Restore"}
-                    </Button>
-                  </div>
-                </div>
-                {version.grade && version.grade.goal !== goal?.trim() ? (
-                  <p className="text-xs text-muted">Graded against an earlier goal: {version.grade.goal}</p>
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={handleGradeDeck}
+                  disabled={isGradingDeck}
+                  className="px-4 py-1 text-xs"
+                >
+                  {isGradingDeck ? "Grading..." : currentGrade ? "Re-grade deck" : "Grade current deck"}
+                </Button>
+              </div>
+              {currentGrade ? (
+                <GradePanel
+                  grade={currentGrade}
+                  baseline={
+                    versions[0].grade && versions[0].grade.goal === currentGrade.goal
+                      ? versions[0].grade
+                      : null
+                  }
+                />
+              ) : (
+                <p className="text-xs text-muted">
+                  Grade the deck as it is now to see how your unsaved changes compare with version{" "}
+                  {versions[0].number}.
+                </p>
+              )}
+            </div>
+          ) : null}
+          <LatestVersion
+            version={versions[0]}
+            // The most recent earlier graded version is the comparison point;
+            // scores only compare when both used the same goal.
+            baseline={baselineFor(versions)}
+            goal={goal}
+            isGrading={gradingId === versions[0].id}
+            onGrade={() => handleGrade(versions[0])}
+          />
+          <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
+            <div className="flex items-center gap-2">
+              <label htmlFor="restore-version" className="shrink-0 text-muted">
+                Restore a saved version
+              </label>
+              <select
+                id="restore-version"
+                value={restoreId}
+                onChange={(event) => setRestoreId(event.target.value)}
+                className="input min-w-0 flex-1 text-sm"
+              >
+                <option value="">Choose a version...</option>
+                {versions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    Version {version.number} - {new Date(version.createdAt).toLocaleDateString()} -{" "}
+                    {version.description.length > 60
+                      ? `${version.description.slice(0, 60)}...`
+                      : version.description}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="secondary"
+                onClick={() => restoreChoice && handleRestore(restoreChoice)}
+                disabled={!restoreChoice || restoringId !== null}
+                className="shrink-0 px-4 py-1 text-xs"
+              >
+                {restoringId !== null ? "Restoring..." : "Restore"}
+              </Button>
+            </div>
+            {restoreChoice ? (
+              <div className="flex flex-col gap-1 text-xs text-muted">
+                <Markdown>{restoreChoice.description}</Markdown>
+                {restoreChoice.grade ? (
+                  <p>
+                    Grade: {letterGrade(restoreChoice.grade.score)} ({restoreChoice.grade.score})
+                  </p>
                 ) : null}
-                <Markdown>{version.description}</Markdown>
-                {version.grade ? <GradePanel grade={version.grade} baseline={baseline} /> : null}
-                {changeSummary(version.changes) ? (
+                {changeSummary(restoreChoice.changes) ? (
                   <details>
-                    <summary className="cursor-pointer text-xs text-muted">
-                      {changeSummary(version.changes)}
-                    </summary>
+                    <summary className="cursor-pointer">{changeSummary(restoreChoice.changes)}</summary>
                     <div className="mt-1">
-                      <ChangeList changes={version.changes} />
+                      <ChangeList changes={restoreChoice.changes} />
                     </div>
                   </details>
                 ) : null}
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+            ) : null}
+          </div>
+        </>
       )}
     </div>
   );

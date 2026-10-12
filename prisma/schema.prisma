@@ -90,6 +90,14 @@ model Deck {
   critique        String?
   description     String?
   goal            String?
+  /// Latest grade from the combined critique + grade call; same shape as the
+  /// DeckVersion grade columns. `gradeSignature` fingerprints the cards it was
+  /// graded on so a stale grade (deck edited since) can be told apart.
+  gradeScore      Int?
+  gradeGoal       String?
+  gradeBreakdown  Json?
+  gradeSummary    String?
+  gradeSignature  String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   cards           DeckCard[]

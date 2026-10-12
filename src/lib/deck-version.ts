@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
-import { gradeDeck, type DeckGrade, type GradeCategory } from "@/lib/deck-grade";
+import { gradeDeck, type DeckGrade, type GradeCategory, type GradeInput } from "@/lib/deck-grade";
+import { deckSignature } from "@/lib/deck-signature";
 import type { Prisma } from "@/generated/prisma/client";
 
 export class DeckVersionError extends Error {}
@@ -97,7 +98,7 @@ type DeckWithCards = {
   cards: { cardId: string; quantity: number; isCommander: boolean; card: { name: string } }[];
 };
 
-function snapshotOf(source: DeckWithCards): DeckSnapshot {
+export function snapshotOf(source: DeckWithCards): DeckSnapshot {
   return {
     commanderName: source.commanderCard?.name ?? null,
     cards: source.cards.map((deckCard) => ({
@@ -137,7 +138,7 @@ type GradedVersionFields = {
   gradeSummary: string | null;
 };
 
-function gradeOf(version: GradedVersionFields): VersionGrade | null {
+export function gradeOf(version: GradedVersionFields): VersionGrade | null {
   if (version.gradeScore === null || version.gradeGoal === null || !Array.isArray(version.gradeBreakdown)) {
     return null;
   }
@@ -149,7 +150,7 @@ function gradeOf(version: GradedVersionFields): VersionGrade | null {
   };
 }
 
-function gradeColumns(grade: DeckGrade, goal: string) {
+export function gradeColumns(grade: DeckGrade, goal: string) {
   return {
     gradeScore: grade.score,
     gradeGoal: goal,
@@ -168,15 +169,15 @@ function formatCard(card: { name: string; quantity: number }): string {
  * then go into the prompt so the new grade moves only where the changes
  * justify it; a different goal makes old scores meaningless, so it's ignored.
  */
-async function gradeSnapshot(
+export function buildGradeInput(
   snapshot: DeckSnapshot,
   goal: string,
   earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
-): Promise<DeckGrade> {
+): GradeInput {
   const comparable = earlier?.grade && earlier.grade.goal === goal ? earlier : null;
   const changes = comparable ? diffSnapshots(comparable.snapshot, snapshot) : null;
 
-  return gradeDeck({
+  return {
     goal,
     commanderName: snapshot.commanderName ?? "none",
     cards: snapshot.cards.filter((card) => !card.isCommander),
@@ -189,11 +190,19 @@ async function gradeSnapshot(
             removed: changes.removed.map(formatCard),
           }
         : null,
-  });
+  };
+}
+
+async function gradeSnapshot(
+  snapshot: DeckSnapshot,
+  goal: string,
+  earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
+): Promise<DeckGrade> {
+  return gradeDeck(buildGradeInput(snapshot, goal, earlier));
 }
 
 /** The closest version before `number` that has a grade, as a comparison baseline. */
-async function loadEarlierGraded(deckId: string, beforeNumber?: number) {
+export async function loadEarlierGraded(deckId: string, beforeNumber?: number) {
   const version = await prisma.deckVersion.findFirst({
     where: {
       deckId,
@@ -249,6 +258,22 @@ export async function draftVersionDescription(deckId: string): Promise<string> {
   return (await getLlmProvider().complete(prompt)).trim();
 }
 
+/** The deck's own stored grade, if it was made for these exact cards and this goal. */
+function freshDeckGrade(
+  deck: GradedVersionFields & {
+    gradeSignature?: string | null;
+    commanderCardId: string | null;
+    cards: { cardId: string; quantity: number; isCommander: boolean }[];
+  },
+  goal: string,
+): VersionGrade | null {
+  const grade = gradeOf(deck);
+  if (!grade || grade.goal !== goal || deck.gradeSignature !== deckSignature(deck.commanderCardId, deck.cards)) {
+    return null;
+  }
+  return grade;
+}
+
 /**
  * Saves the deck's current cards and commander as the next version. Rejects
  * an empty description, a deck with no cards, and a deck identical to its
@@ -275,10 +300,21 @@ export async function saveDeckVersion(deckId: string, description: string) {
   let gradeData: ReturnType<typeof gradeColumns> | null = null;
   const goal = deck.goal?.trim();
   if (goal) {
-    try {
-      gradeData = gradeColumns(await gradeSnapshot(snapshotOf(deck), goal, await loadEarlierGraded(deckId)), goal);
-    } catch {
-      gradeData = null;
+    const fresh = freshDeckGrade(deck, goal);
+    if (fresh) {
+      // The critique already graded exactly these cards against this goal.
+      gradeData = {
+        gradeScore: fresh.score,
+        gradeGoal: goal,
+        gradeBreakdown: fresh.breakdown as unknown as Prisma.InputJsonValue,
+        gradeSummary: fresh.summary,
+      };
+    } else {
+      try {
+        gradeData = gradeColumns(await gradeSnapshot(snapshotOf(deck), goal, await loadEarlierGraded(deckId)), goal);
+      } catch {
+        gradeData = null;
+      }
     }
   }
 
@@ -298,6 +334,34 @@ export async function saveDeckVersion(deckId: string, description: string) {
       },
     },
   });
+}
+
+/**
+ * Grades the deck as it stands now (saved or not) against its goal, anchored
+ * to the latest graded version so the result is comparable with history. The
+ * caller stores it on the deck; saving a version then reuses it while the
+ * cards and goal are unchanged.
+ */
+export async function gradeCurrentDeck(
+  deckId: string,
+): Promise<DeckGrade & { goal: string; signature: string }> {
+  const deck = await loadDeck(deckId);
+  const goal = deck.goal?.trim();
+  if (!goal) {
+    throw new DeckVersionError("Set a goal for this deck before grading it");
+  }
+  if (deck.cards.length === 0) {
+    throw new DeckVersionError("Build the deck before grading it");
+  }
+
+  let grade: DeckGrade;
+  try {
+    grade = await gradeSnapshot(snapshotOf(deck), goal, await loadEarlierGraded(deckId));
+  } catch (error) {
+    throw new DeckVersionError(error instanceof Error ? error.message : "Couldn't grade this deck");
+  }
+
+  return { ...grade, goal, signature: deckSignature(deck.commanderCardId, deck.cards) };
 }
 
 /**

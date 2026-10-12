@@ -1,4 +1,5 @@
 import { getLlmProvider } from "@/lib/llm";
+export { letterGrade } from "@/lib/grade-letter";
 
 export class DeckGradeError extends Error {}
 
@@ -39,21 +40,11 @@ export interface GradeInput {
   /** Non-commander cards, one entry per card name with its quantity. */
   cards: { name: string; quantity: number }[];
   previous?: PreviousGrade | null;
+  /** Also ask for a free-text critique after the scores, in the same response. */
+  withCritique?: boolean;
 }
 
-export function letterGrade(score: number): string {
-  if (score >= 97) return "A+";
-  if (score >= 93) return "A";
-  if (score >= 90) return "A-";
-  if (score >= 87) return "B+";
-  if (score >= 83) return "B";
-  if (score >= 80) return "B-";
-  if (score >= 77) return "C+";
-  if (score >= 73) return "C";
-  if (score >= 70) return "C-";
-  if (score >= 60) return "D";
-  return "F";
-}
+export const CRITIQUE_MARKER = "=== CRITIQUE ===";
 
 /**
  * Asks the LLM to grade how well a deck is built to achieve its stated goal.
@@ -69,7 +60,7 @@ export async function gradeDeck(input: GradeInput): Promise<DeckGrade> {
   return parseGrade(completion);
 }
 
-export function buildGradePrompt({ goal, commanderName, cards, previous }: GradeInput): string {
+export function buildGradePrompt({ goal, commanderName, cards, previous, withCritique }: GradeInput): string {
   const cardLines = cards
     .map((card) => `- ${card.name}${card.quantity > 1 ? ` x${card.quantity}` : ""}`)
     .join("\n");
@@ -115,6 +106,11 @@ export function buildGradePrompt({ goal, commanderName, cards, previous }: Grade
     "Category :: score :: One sentence naming the specific cards or gaps behind the score.",
     "Then a final line in this format:",
     "SUMMARY :: Two sentences on the deck's biggest strength and the single change that would most improve its odds of reaching the goal.",
+    ...(withCritique
+      ? [
+          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck (markdown is fine): its strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the goal. Put nothing after the critique.`,
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -152,4 +148,38 @@ export function parseGrade(completion: string): DeckGrade {
   const score = Math.round(complete.reduce((sum, entry) => sum + entry.score, 0) / complete.length);
 
   return { score, breakdown: complete, summary };
+}
+
+/**
+ * Splits a combined response into its grade and critique. Never throws: the
+ * critique is free text worth keeping even when the scores can't be read, so
+ * an unreadable grade comes back as null and, if the model skipped the marker
+ * entirely, the whole response is treated as the critique.
+ */
+export function parseGradeAndCritique(completion: string): { grade: DeckGrade | null; critique: string } {
+  const markerIndex = completion.indexOf(CRITIQUE_MARKER);
+  const gradeText = markerIndex >= 0 ? completion.slice(0, markerIndex) : completion;
+
+  let grade: DeckGrade | null = null;
+  try {
+    grade = parseGrade(gradeText);
+  } catch {
+    grade = null;
+  }
+
+  const critique =
+    markerIndex >= 0
+      ? completion.slice(markerIndex + CRITIQUE_MARKER.length).trim()
+      : grade
+        ? ""
+        : completion.trim();
+  return { grade, critique };
+}
+
+/** One LLM call that returns both the grade and the written critique. */
+export async function gradeAndCritiqueDeck(
+  input: GradeInput,
+): Promise<{ grade: DeckGrade | null; critique: string }> {
+  const completion = await getLlmProvider().complete(buildGradePrompt({ ...input, withCritique: true }));
+  return parseGradeAndCritique(completion);
 }
