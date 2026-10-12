@@ -8,6 +8,7 @@ import {
 } from "@/lib/commander-legality";
 import { selectWithinBudget } from "@/lib/budget-selection";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
+import { refreshCardPrices } from "@/lib/card-prices";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -218,7 +219,7 @@ export async function suggestCards(
     matched.set(card.id, { card, tag, reason });
   }
 
-  const ranked = Array.from(matched.values());
+  const ranked = await withFreshPrices(Array.from(matched.values()));
   if (budgetUsd === undefined) {
     return ranked;
   }
@@ -234,6 +235,32 @@ export async function suggestCards(
     ),
   );
   return ranked.filter(({ card }) => chosenIds.has(card.id));
+}
+
+/**
+ * Fetches current prices from Scryfall for suggested cards whose stored
+ * price is missing or stale, then returns the suggestions with the updated
+ * cards. Prices are informational here, so if Scryfall is unreachable the
+ * suggestions come back with whatever prices were already stored.
+ */
+async function withFreshPrices(suggestions: SuggestedCard[]): Promise<SuggestedCard[]> {
+  if (suggestions.length === 0) {
+    return suggestions;
+  }
+
+  const ids = suggestions.map(({ card }) => card.id);
+  try {
+    if ((await refreshCardPrices(ids)) === 0) {
+      return suggestions;
+    }
+  } catch {
+    return suggestions;
+  }
+
+  const fresh = new Map(
+    (await prisma.card.findMany({ where: { id: { in: ids } } })).map((card) => [card.id, card]),
+  );
+  return suggestions.map((suggestion) => ({ ...suggestion, card: fresh.get(suggestion.card.id) ?? suggestion.card }));
 }
 
 function normalize(name: string): string {
