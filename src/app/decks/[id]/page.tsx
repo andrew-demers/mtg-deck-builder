@@ -960,6 +960,11 @@ export default function DeckPage() {
         card.name.toLowerCase().includes(normalizedSwapQuery) ||
         selectedNewCardIds.has(card.id)),
   );
+  // Selected cards stay pinned to the top so they remain visible while searching.
+  const sortedSwapCandidates = [
+    ...swapCandidates.filter((card) => selectedNewCardIds.has(card.id)),
+    ...swapCandidates.filter((card) => !selectedNewCardIds.has(card.id)),
+  ];
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
@@ -1567,11 +1572,11 @@ export default function DeckPage() {
                   placeholder="Search your collection for the cards you just got"
                   className="input text-sm"
                 />
-                {swapCandidates.length === 0 ? (
+                {sortedSwapCandidates.length === 0 ? (
                   <p className="text-sm text-muted">No owned cards match.</p>
                 ) : (
                   <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-                    {swapCandidates.map((card) => (
+                    {sortedSwapCandidates.map((card) => (
                       <li key={card.id} className="text-sm">
                         <label className="flex cursor-pointer items-center gap-2">
                           <input
