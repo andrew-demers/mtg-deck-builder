@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { DEFAULT_GRADE_GOAL } from "@/lib/deck-grade";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -112,10 +113,25 @@ describe("critiqueAndGradeDeck", () => {
     expect(result.grade?.signature).toBeTruthy();
   });
 
-  it("falls back to a plain critique with no grade when the deck has no goal", async () => {
+  it("grades against the win condition the model infers when the deck has no goal", async () => {
     deckFindUniqueMock.mockResolvedValue(deckWith(null));
-    getLlmProviderMock.mockReturnValue({ complete: vi.fn().mockResolvedValue("Plain critique.") });
+    const complete = vi
+      .fn()
+      .mockResolvedValue(`WIN CONDITION :: Win with tokens.\n${scores}\nSUMMARY :: Fine.\n=== CRITIQUE ===\nGood ramp.`);
+    getLlmProviderMock.mockReturnValue({ complete });
 
-    expect(await critiqueAndGradeDeck("deck_1")).toEqual({ critique: "Plain critique.", grade: null });
+    const result = await critiqueAndGradeDeck("deck_1");
+
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0][0]).toContain("WIN CONDITION ::");
+    expect(result.grade?.goal).toBe("Win with tokens.");
+  });
+
+  it("falls back to the default goal when the model omits the win condition", async () => {
+    deckFindUniqueMock.mockResolvedValue(deckWith(null));
+    const complete = vi.fn().mockResolvedValue(`${scores}\nSUMMARY :: Fine.\n=== CRITIQUE ===\nGood ramp.`);
+    getLlmProviderMock.mockReturnValue({ complete });
+
+    expect((await critiqueAndGradeDeck("deck_1")).grade?.goal).toBe(DEFAULT_GRADE_GOAL);
   });
 });

@@ -332,10 +332,7 @@ describe("gradeCurrentDeck", () => {
     completeMock.mockReset();
   });
 
-  it("requires a goal and cards", async () => {
-    deckFindUniqueMock.mockResolvedValueOnce(stored([row("atraxa", 1, true)]));
-    await expect(gradeCurrentDeck("deck_1")).rejects.toThrow("Set a goal");
-
+  it("requires cards", async () => {
     deckFindUniqueMock.mockResolvedValueOnce(stored([], "atraxa", { goal: "Combo off" }));
     await expect(gradeCurrentDeck("deck_1")).rejects.toThrow("Build the deck");
   });

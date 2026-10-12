@@ -326,6 +326,8 @@ export default function DeckVersions({
     }
   }
 
+  const latest = versions?.[0] ?? null;
+
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
@@ -397,47 +399,47 @@ export default function DeckVersions({
         </div>
       ) : null}
 
+      {goal || currentGrade ? (
+        <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
+          <div className="flex items-center justify-between gap-4">
+            <span className="font-medium">
+              Current deck
+              <span className="ml-2 text-xs font-normal text-muted">
+                includes any changes you haven&apos;t saved yet
+              </span>
+            </span>
+            <Button
+              variant="secondary"
+              onClick={handleGradeDeck}
+              disabled={isGradingDeck}
+              className="px-4 py-1 text-xs"
+            >
+              {isGradingDeck ? "Grading..." : currentGrade ? "Re-grade deck" : "Grade current deck"}
+            </Button>
+          </div>
+          {currentGrade ? (
+            <GradePanel
+              grade={currentGrade}
+              baseline={
+                latest?.grade && latest.grade.goal === currentGrade.goal ? latest.grade : null
+              }
+            />
+          ) : (
+            <p className="text-xs text-muted">
+              {latest
+                ? `Grade the deck as it is now to see how your unsaved changes compare with version ${latest.number}.`
+                : "Grade the deck as it is now, or get a critique to grade it along with a written review."}
+            </p>
+          )}
+        </div>
+      ) : null}
+
       {versions === null ? (
         <p className="text-sm text-muted">Loading versions...</p>
       ) : versions.length === 0 ? (
         <p className="text-sm text-muted">No versions saved yet.</p>
       ) : (
         <>
-          {goal ? (
-            <div className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <span className="font-medium">
-                  Current deck
-                  <span className="ml-2 text-xs font-normal text-muted">
-                    includes any changes you haven&apos;t saved yet
-                  </span>
-                </span>
-                <Button
-                  variant="secondary"
-                  onClick={handleGradeDeck}
-                  disabled={isGradingDeck}
-                  className="px-4 py-1 text-xs"
-                >
-                  {isGradingDeck ? "Grading..." : currentGrade ? "Re-grade deck" : "Grade current deck"}
-                </Button>
-              </div>
-              {currentGrade ? (
-                <GradePanel
-                  grade={currentGrade}
-                  baseline={
-                    versions[0].grade && versions[0].grade.goal === currentGrade.goal
-                      ? versions[0].grade
-                      : null
-                  }
-                />
-              ) : (
-                <p className="text-xs text-muted">
-                  Grade the deck as it is now to see how your unsaved changes compare with version{" "}
-                  {versions[0].number}.
-                </p>
-              )}
-            </div>
-          ) : null}
           <LatestVersion
             version={versions[0]}
             // The most recent earlier graded version is the comparison point;
