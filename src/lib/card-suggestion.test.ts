@@ -33,7 +33,7 @@ import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { refreshCardPrices } from "@/lib/card-prices";
-import { suggestCards, CardSuggestionError } from "@/lib/card-suggestion";
+import { suggestCards, suggestCardsFromCritique, CardSuggestionError } from "@/lib/card-suggestion";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<
@@ -485,5 +485,45 @@ describe("suggestCards", () => {
 
       await expect(suggestCards("deck_1", { budgetUsd: 20 })).rejects.toThrow(CardSuggestionError);
     });
+  });
+});
+
+describe("suggestCardsFromCritique", () => {
+  beforeEach(() => {
+    deckFindUniqueMock.mockReset();
+    cardFindManyMock.mockReset();
+    getLlmProviderMock.mockReset();
+    refreshPricesMock.mockReset();
+    refreshPricesMock.mockResolvedValue(0);
+  });
+
+  it("throws when the deck has no critique", async () => {
+    mockDeck([]);
+
+    await expect(suggestCardsFromCritique("deck_1")).rejects.toThrow("no critique");
+  });
+
+  it("returns the critique's cards in order, dropping unknown, in-deck and off-color cards", async () => {
+    mockDeck([{ cardId: "indeck", quantity: 1, isCommander: false, card: card({ id: "indeck" }) }], "Add stuff.");
+    mockCompletion(
+      [
+        "Worldly Tutor :: Tutor :: Finds the engine.",
+        "Made Up Card :: Ramp :: Hallucinated.",
+        "Already Here :: Ramp :: In the deck.",
+        "Lightning Bolt :: Removal :: Off color.",
+        "Heroic Intervention :: Protection :: Protects the board.",
+      ].join("\n"),
+    );
+    cardFindManyMock.mockResolvedValue([
+      card({ id: "tutor", name: "Worldly Tutor", colorIdentity: ["G"] }),
+      card({ id: "indeck", name: "Already Here", colorIdentity: ["G"] }),
+      card({ id: "bolt", name: "Lightning Bolt", colorIdentity: ["R"] }),
+      card({ id: "hi", name: "Heroic Intervention", colorIdentity: ["G"] }),
+    ]);
+
+    const result = await suggestCardsFromCritique("deck_1");
+
+    expect(result.map((r) => r.card.id)).toEqual(["tutor", "hi"]);
+    expect(result[0]).toMatchObject({ tag: "Tutor", reason: "Finds the engine." });
   });
 });

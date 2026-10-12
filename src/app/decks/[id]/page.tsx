@@ -14,6 +14,7 @@ import type { VersionGrade } from "@/components/grade-panel";
 import { deckSignature } from "@/lib/deck-signature";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
+import { selectWithinBudget } from "@/lib/budget-selection";
 import { isCommanderEligible } from "@/lib/commander-eligibility";
 import {
   buildBuyList,
@@ -115,6 +116,11 @@ export default function DeckPage() {
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
+  // Every card the critique recommends, kept so a budget can narrow the
+  // visible list and be widened again. Null when the list is not from a critique.
+  const [critiqueSuggestions, setCritiqueSuggestions] = useState<
+    SuggestedCard[] | null
+  >(null);
   const [ownedOnly, setOwnedOnly] = useState(false);
   const [tokenRecommendations, setTokenRecommendations] = useState<
     TokenRecommendation[] | null
@@ -435,6 +441,7 @@ export default function DeckPage() {
 
       const data = (await response.json()) as DeckData;
       setDeck(data);
+      await handleSuggestFromCritique();
     } catch {
       setError("Something went wrong getting a critique for this deck.");
     } finally {
@@ -524,12 +531,77 @@ export default function DeckPage() {
       }
 
       const data = (await response.json()) as SuggestedCard[];
+      setCritiqueSuggestions(null);
       setSuggestedCards(data);
     } catch {
       setError("Something went wrong getting card suggestions for this deck.");
     } finally {
       setIsSuggesting(false);
     }
+  }
+
+  /** Fills the suggestions list with the cards the saved critique recommends adding. */
+  async function handleSuggestFromCritique() {
+    setError(null);
+    setIsSuggesting(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/suggest-cards`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromCritique: true }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(
+          data?.error ??
+            "Something went wrong getting the critique's suggested cards.",
+        );
+        return;
+      }
+
+      const data = (await response.json()) as SuggestedCard[];
+      setCritiqueSuggestions(data);
+      setSuggestedCards(data);
+    } catch {
+      setError("Something went wrong getting the critique's suggested cards.");
+    } finally {
+      setIsSuggesting(false);
+    }
+  }
+
+  /**
+   * Narrows the critique's cards to the best set whose unowned cards fit the
+   * budget (owned cards are free), keeping the critique's order. Cards
+   * without a known price can't be checked against it, so they are left out.
+   */
+  function narrowCritiqueToBudget(budgetUsd: number) {
+    if (!critiqueSuggestions) {
+      return;
+    }
+    const owned = new Set((collectionCards ?? []).map((card) => card.id));
+    const inDeck = new Set(deck?.cards.map((deckCard) => deckCard.cardId));
+    const remaining = critiqueSuggestions.filter(
+      ({ card }) => !inDeck.has(card.id),
+    );
+    const chosen = new Set(
+      selectWithinBudget(
+        remaining
+          .filter(({ card }) => owned.has(card.id) || card.priceUsd !== null)
+          .map(({ card }) => ({
+            id: card.id,
+            costCents: owned.has(card.id)
+              ? 0
+              : Math.round((card.priceUsd ?? 0) * 100),
+          })),
+        Math.round(budgetUsd * 100),
+        remaining.length,
+      ),
+    );
+    setSuggestedCards(remaining.filter(({ card }) => chosen.has(card.id)));
   }
 
   function toggleNewCard(cardId: string) {
@@ -1447,6 +1519,16 @@ export default function DeckPage() {
                 >
                   {isSuggesting ? "Getting suggestions..." : "Get suggestions"}
                 </Button>
+                {deck.critique ? (
+                  <Button
+                    variant="secondary"
+                    onClick={handleSuggestFromCritique}
+                    disabled={isSuggesting}
+                    className="self-start px-5 py-2 text-sm"
+                  >
+                    From critique
+                  </Button>
+                ) : null}
               </div>
             }
           >
@@ -1469,20 +1551,28 @@ export default function DeckPage() {
                 step="1"
                 inputMode="decimal"
                 value={budgetInput}
-                disabled={ownedOnly}
+                disabled={ownedOnly && !critiqueSuggestions}
                 onChange={(event) => setBudgetInput(event.target.value)}
                 placeholder="20"
                 className="w-24 rounded border border-border bg-transparent px-2 py-1"
               />
               <Button
                 variant="secondary"
-                onClick={() => handleGetSuggestions(true, Number(budgetInput))}
+                onClick={() =>
+                  critiqueSuggestions
+                    ? narrowCritiqueToBudget(Number(budgetInput))
+                    : handleGetSuggestions(true, Number(budgetInput))
+                }
                 disabled={
-                  isSuggesting || ownedOnly || !(Number(budgetInput) > 0)
+                  isSuggesting ||
+                  (ownedOnly && !critiqueSuggestions) ||
+                  !(Number(budgetInput) > 0)
                 }
                 className="px-5 py-2 text-sm"
               >
-                Best cards for budget
+                {critiqueSuggestions
+                  ? "Narrow critique cards to budget"
+                  : "Best cards for budget"}
               </Button>
             </div>
             {suggestedCards.length > 0 ? (
