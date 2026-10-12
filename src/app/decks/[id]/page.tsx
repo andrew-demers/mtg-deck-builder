@@ -98,6 +98,7 @@ export default function DeckPage() {
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
+  const [ownedOnly, setOwnedOnly] = useState(false);
   const [changingFromCardId, setChangingFromCardId] = useState<string | null>(null);
   const [commanderQuery, setCommanderQuery] = useState("");
   const [isChangingCommander, setIsChangingCommander] = useState(false);
@@ -1158,7 +1159,7 @@ export default function DeckPage() {
               <p className="text-sm font-medium text-muted">Card suggestions</p>
               <div className="flex gap-2">
                 <Button
-                  onClick={() => handleGetSuggestions(true)}
+                  onClick={() => handleGetSuggestions(!ownedOnly)}
                   disabled={isSuggesting}
                   className="self-start px-5 py-2 text-sm"
                 >
@@ -1166,6 +1167,14 @@ export default function DeckPage() {
                 </Button>
               </div>
             </div>
+            <label className="flex items-center justify-end gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={ownedOnly}
+                onChange={(event) => setOwnedOnly(event.target.checked)}
+              />
+              Only suggest cards I own
+            </label>
             <div className="flex items-center justify-end gap-2 text-sm">
               <label htmlFor="suggestion-budget" className="text-muted">
                 Budget for cards I don&apos;t own ($)
@@ -1177,6 +1186,7 @@ export default function DeckPage() {
                 step="1"
                 inputMode="decimal"
                 value={budgetInput}
+                disabled={ownedOnly}
                 onChange={(event) => setBudgetInput(event.target.value)}
                 placeholder="20"
                 className="w-24 rounded border border-border bg-transparent px-2 py-1"
@@ -1184,7 +1194,7 @@ export default function DeckPage() {
               <Button
                 variant="secondary"
                 onClick={() => handleGetSuggestions(true, Number(budgetInput))}
-                disabled={isSuggesting || !(Number(budgetInput) > 0)}
+                disabled={isSuggesting || ownedOnly || !(Number(budgetInput) > 0)}
                 className="px-5 py-2 text-sm"
               >
                 Best cards for budget
