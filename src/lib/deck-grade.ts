@@ -121,7 +121,7 @@ export function buildGradePrompt(input: GradeInput): string {
     "SUMMARY :: Two sentences on the deck's biggest strength and the single change that would most improve its odds of reaching the goal.",
     ...(withCritique
       ? [
-          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck (markdown is fine): its strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the ${input.goal ? "goal" : "win condition"}. Put nothing after the critique.`,
+          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck in markdown. Start it with a section headed "## Win condition" covering how the deck actually wins (the specific cards, combos, or game plan), how many cards support it and how redundant they are, how quickly it can realistically get there, and what could stop it. Then cover the deck's strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the ${input.goal ? "goal" : "win condition"}. Put nothing after the critique.`,
         ]
       : []),
   ].join("\n");
