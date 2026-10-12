@@ -65,6 +65,14 @@ interface SuggestedCard {
   reason: string;
 }
 
+interface TokenRecommendation {
+  kind: "token" | "counter";
+  name: string;
+  quantity: number;
+  cards: string[];
+  reason: string;
+}
+
 interface ReplacementSuggestion {
   add: CardData;
   remove: CardData;
@@ -99,6 +107,8 @@ export default function DeckPage() {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   const [ownedOnly, setOwnedOnly] = useState(false);
+  const [tokenRecommendations, setTokenRecommendations] = useState<TokenRecommendation[] | null>(null);
+  const [isEvaluatingTokens, setIsEvaluatingTokens] = useState(false);
   const [changingFromCardId, setChangingFromCardId] = useState<string | null>(null);
   const [commanderQuery, setCommanderQuery] = useState("");
   const [isChangingCommander, setIsChangingCommander] = useState(false);
@@ -396,6 +406,27 @@ export default function DeckPage() {
       setError("Something went wrong getting a description for this deck.");
     } finally {
       setIsDescribing(false);
+    }
+  }
+
+  async function handleEvaluateTokens() {
+    setError(null);
+    setIsEvaluatingTokens(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/evaluate-tokens`, { method: "POST" });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as { error?: string } | null;
+        setError(data?.error ?? "Something went wrong evaluating tokens and counters.");
+        return;
+      }
+
+      setTokenRecommendations((await response.json()) as TokenRecommendation[]);
+    } catch {
+      setError("Something went wrong evaluating tokens and counters.");
+    } finally {
+      setIsEvaluatingTokens(false);
     }
   }
 
@@ -1152,6 +1183,42 @@ export default function DeckPage() {
               </p>
             ) : null}
             {deck.critique ? <Markdown>{deck.critique}</Markdown> : null}
+          </div>
+
+          <div className="card flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-muted">Tokens and counters</p>
+              <Button
+                onClick={handleEvaluateTokens}
+                disabled={isEvaluatingTokens}
+                className="self-start px-5 py-2 text-sm"
+              >
+                {isEvaluatingTokens
+                  ? "Evaluating..."
+                  : tokenRecommendations
+                    ? "Re-evaluate tokens/counters"
+                    : "Evaluate tokens/counters"}
+              </Button>
+            </div>
+            {tokenRecommendations?.length === 0 ? (
+              <p className="text-sm text-muted">This deck doesn&apos;t appear to make or use tokens or counters.</p>
+            ) : null}
+            {tokenRecommendations && tokenRecommendations.length > 0 ? (
+              <ul className="flex flex-col gap-3 text-sm">
+                {tokenRecommendations.map((recommendation) => (
+                  <li key={`${recommendation.kind}-${recommendation.name}`} className="flex flex-col gap-1">
+                    <p>
+                      <span className="font-medium">
+                        {recommendation.quantity} x {recommendation.name}
+                      </span>{" "}
+                      <span className="text-xs text-muted">({recommendation.kind})</span>
+                    </p>
+                    <p className="text-muted">{recommendation.reason}</p>
+                    <p className="text-xs text-muted">From: {recommendation.cards.join(", ")}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </div>
 
           <div className="card flex flex-col gap-3">
