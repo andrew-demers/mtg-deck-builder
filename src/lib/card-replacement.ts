@@ -149,7 +149,7 @@ function buildPrompt(
     "You are improving an existing Magic: The Gathering Commander/EDH deck with cards the player just acquired.",
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
-    `For each new card below, pick one card currently in the deck that it should replace, or skip the new card if it would not improve the deck.`,
+    "The player chose every new card below on purpose. For each one, pick the single weakest card currently in the deck that it should replace, and output exactly one line per new card - do not skip any.",
     "Never pick the same card to cut twice. Only cut cards from the deck list.",
     "Respond with one swap per line in exactly this format and nothing else:",
     "New Card Name :: Deck Card To Cut :: One-sentence reason the swap improves the deck.",

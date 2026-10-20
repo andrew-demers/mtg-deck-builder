@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { formatManaBoxCsv } from "@/lib/manabox-csv";
 import { buildDeckExportRows } from "@/lib/deck-export";
+import { formatDeckText } from "@/lib/deck-text-export";
 
 function slugifyDeckName(name: string): string {
   const slug = name
@@ -20,9 +21,12 @@ function slugifyDeckName(name: string): string {
  * CollectionEntry for each card when one exists - DeckCard itself only
  * tracks name and quantity. 404 if the deck doesn't exist, 403 if it belongs
  * to a different user.
+ *
+ * `?format=arena` or `?format=mtgo` returns a plain-text decklist for that
+ * client instead (commander split out, names only); anything else is the CSV.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const session = await auth();
@@ -33,6 +37,7 @@ export async function GET(
   }
 
   const { id } = await params;
+  const format = new URL(request.url).searchParams.get("format");
 
   const deck = await prisma.deck.findUnique({ where: { id } });
 
@@ -49,6 +54,18 @@ export async function GET(
     include: { card: true },
   });
 
+  const slug = slugifyDeckName(deck.name);
+
+  if (format === "arena" || format === "mtgo") {
+    return new NextResponse(formatDeckText(deckCards, deck.commanderCardId, format), {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${slug}-${format}.txt"`,
+      },
+    });
+  }
+
   const collectionEntries = await prisma.collectionEntry.findMany({
     where: { userId, cardId: { in: deckCards.map((deckCard) => deckCard.cardId) } },
   });
@@ -60,7 +77,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${slugifyDeckName(deck.name)}.csv"`,
+      "Content-Disposition": `attachment; filename="${slug}.csv"`,
     },
   });
 }

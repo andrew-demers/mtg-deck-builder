@@ -1091,7 +1091,21 @@ export default function DeckPage() {
             className="px-4 py-1 text-xs"
             href={`/api/decks/${deckId}/export`}
           >
-            Export
+            Export CSV
+          </LinkButton>
+          <LinkButton
+            variant="secondary"
+            className="px-4 py-1 text-xs"
+            href={`/api/decks/${deckId}/export?format=arena`}
+          >
+            Export Arena
+          </LinkButton>
+          <LinkButton
+            variant="secondary"
+            className="px-4 py-1 text-xs"
+            href={`/api/decks/${deckId}/export?format=mtgo`}
+          >
+            Export MTGO
           </LinkButton>
           <Button
             variant="secondary"

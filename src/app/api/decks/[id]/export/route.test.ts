@@ -99,4 +99,32 @@ describe("GET /api/decks/[id]/export", () => {
       where: { userId: "user_1", cardId: { in: ["sol_ring", "plains"] } },
     });
   });
+
+  it.each([
+    ["arena", "Commander\n1 Atraxa\n\nDeck\n1 Sol Ring\n", "atraxa-arena.txt"],
+    ["mtgo", "1 Sol Ring\n\nSB: 1 Atraxa\n", "atraxa-mtgo.txt"],
+  ])("returns a %s text decklist", async (format, expectedBody, filename) => {
+    authMock.mockResolvedValue({ user: { id: "user_1" } });
+    deckFindUniqueMock.mockResolvedValue({
+      id: "deck_1",
+      userId: "user_1",
+      name: "Atraxa",
+      commanderCardId: "atraxa",
+    });
+    deckCardFindManyMock.mockResolvedValue([
+      { cardId: "atraxa", quantity: 1, card: { name: "Atraxa" } },
+      { cardId: "sol_ring", quantity: 1, card: { name: "Sol Ring" } },
+    ]);
+
+    const response = await GET(
+      new Request(`http://localhost/api/decks/deck_1/export?format=${format}`),
+      buildParams("deck_1"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/plain");
+    expect(response.headers.get("Content-Disposition")).toBe(`attachment; filename="${filename}"`);
+    expect(await response.text()).toBe(expectedBody);
+    expect(collectionEntryFindManyMock).not.toHaveBeenCalled();
+  });
 });

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import ManaCost from "@/components/mana-cost";
 import CardStats from "@/components/card-stats";
 import CardName from "@/components/card-name";
+import Button from "@/components/button";
 
 interface CardData {
   id: string;
@@ -69,6 +70,70 @@ export default function CollectionPage() {
   const [entries, setEntries] = useState<CollectionEntryData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [reloadCounter, setReloadCounter] = useState(0);
+
+  const [addName, setAddName] = useState("");
+  const [addQuantity, setAddQuantity] = useState("1");
+  const [addFoil, setAddFoil] = useState(false);
+  const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addMessage, setAddMessage] = useState<{ text: string; isError: boolean } | null>(null);
+
+  useEffect(() => {
+    const query = addName.trim();
+    if (query.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(
+          `/api/cards/lookup?autocomplete=1&name=${encodeURIComponent(query)}`,
+          { signal: controller.signal },
+        );
+        if (response.ok) {
+          setNameSuggestions(((await response.json()) as { names: string[] }).names);
+        }
+      } catch {
+        // Suggestions are a convenience; typing a full name still works.
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [addName]);
+
+  async function handleAddCard(event: FormEvent) {
+    event.preventDefault();
+    setIsAdding(true);
+    setAddMessage(null);
+
+    try {
+      const response = await fetch("/api/collection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: addName, quantity: Number(addQuantity), foil: addFoil }),
+      });
+      const data = (await response.json()) as { name?: string; error?: string };
+
+      if (!response.ok) {
+        setAddMessage({ text: data.error ?? "Could not add that card.", isError: true });
+        return;
+      }
+
+      setAddMessage({ text: `Added ${addQuantity} x ${data.name}.`, isError: false });
+      setAddName("");
+      setAddQuantity("1");
+      setReloadCounter((count) => count + 1);
+    } catch {
+      setAddMessage({ text: "Could not add that card.", isError: true });
+    } finally {
+      setIsAdding(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -101,7 +166,7 @@ export default function CollectionPage() {
     loadCollection();
 
     return () => controller.abort();
-  }, [minManaValue, maxManaValue, colors, type, commanderEligibleOnly, sort]);
+  }, [minManaValue, maxManaValue, colors, type, commanderEligibleOnly, sort, reloadCounter]);
 
   function toggleColor(color: string) {
     setColors((current) => {
@@ -118,6 +183,47 @@ export default function CollectionPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
       <h1 className="font-display text-3xl tracking-wide">Collection</h1>
+
+      <form onSubmit={handleAddCard} className="card flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Add a card</h2>
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-sm font-medium">Card name (Scryfall search)</span>
+            <input
+              type="text"
+              list="add-card-suggestions"
+              value={addName}
+              onChange={(event) => setAddName(event.target.value)}
+              className="input"
+            />
+            <datalist id="add-card-suggestions">
+              {(addName.trim().length >= 2 ? nameSuggestions : []).map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium">Quantity</span>
+            <input
+              type="number"
+              min={1}
+              value={addQuantity}
+              onChange={(event) => setAddQuantity(event.target.value)}
+              className="input w-24"
+            />
+          </label>
+          <label className="flex items-center gap-2 pb-2 text-sm font-medium">
+            <input type="checkbox" checked={addFoil} onChange={(event) => setAddFoil(event.target.checked)} />
+            Foil
+          </label>
+          <Button type="submit" disabled={isAdding || !addName.trim()} className="px-5 py-2 text-sm">
+            {isAdding ? "Adding..." : "Add"}
+          </Button>
+        </div>
+        {addMessage ? (
+          <p className={`text-sm ${addMessage.isError ? "text-danger" : "text-muted"}`}>{addMessage.text}</p>
+        ) : null}
+      </form>
 
       <div className="card flex flex-col gap-4">
         <div className="flex flex-wrap gap-4">
