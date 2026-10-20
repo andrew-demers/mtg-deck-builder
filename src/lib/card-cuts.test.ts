@@ -25,7 +25,7 @@ const commander = card("commander", "Commander");
 const forest = card("forest", "Plains", "Basic Land - Plains");
 
 /** A deck of `total` cards: commander, a basic land stack and two named spells. */
-function mockDeck(total: number) {
+function mockDeck(total: number, cardDecisions: unknown = null) {
   deckFindUniqueMock.mockResolvedValue({
     id: "deck_1",
     commanderCardId: "commander",
@@ -36,6 +36,7 @@ function mockDeck(total: number) {
       { cardId: "a", quantity: 1, isCommander: false, card: card("a", "Old A") },
       { cardId: "b", quantity: 1, isCommander: false, card: card("b", "Old B") },
     ],
+    cardDecisions,
   });
 }
 
@@ -73,5 +74,27 @@ describe("suggestCuts", () => {
     const cuts = await suggestCuts("deck_1");
 
     expect(cuts.map((cut) => cut.card.id)).toEqual(["a"]);
+  });
+
+  it("does not offer a card the player just added when other cards can be cut", async () => {
+    mockDeck(101, { cuts: [], adds: [{ id: "a", name: "Old A" }] });
+    const complete = mockLlm("Old A :: Just added.\nOld B :: Weak.");
+
+    const cuts = await suggestCuts("deck_1");
+
+    expect(cuts.map((cut) => cut.card.id)).toEqual(["b"]);
+    const prompt = complete.mock.calls[0][0] as string;
+    expect(prompt).toContain("Do not recommend cutting: Old A");
+    expect(prompt).not.toContain("- Old A (");
+  });
+
+  it("can still cut a just-added card when nothing else covers the surplus", async () => {
+    mockDeck(102, { cuts: [], adds: [{ id: "a", name: "Old A" }] });
+    const complete = mockLlm("Old A :: Last resort.\nOld B :: Weak.");
+
+    const cuts = await suggestCuts("deck_1");
+
+    expect(cuts.map((cut) => cut.card.id)).toEqual(["a", "b"]);
+    expect(complete.mock.calls[0][0]).toContain("Cut those only if you cannot reach 2 cuts");
   });
 });

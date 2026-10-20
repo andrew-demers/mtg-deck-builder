@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isBasicLand } from "@/lib/commander-legality";
+import { cardDecisionsJson, decisionsAfterCut, parseCardDecisions } from "@/lib/deck-decisions";
 
 interface UpdateDeckCardBody {
   quantity?: number;
@@ -39,6 +40,7 @@ export async function DELETE(
 
   const deckCard = await prisma.deckCard.findUnique({
     where: { deckId_cardId: { deckId: id, cardId } },
+    include: { card: true },
   });
 
   if (!deckCard) {
@@ -50,6 +52,21 @@ export async function DELETE(
   }
 
   await prisma.deckCard.delete({ where: { id: deckCard.id } });
+
+  // Remember nonbasic cuts so the next suggestion pass does not add them back.
+  if (!isBasicLand(deckCard.card)) {
+    await prisma.deck.update({
+      where: { id },
+      data: {
+        cardDecisions: cardDecisionsJson(
+          decisionsAfterCut(parseCardDecisions(deck.cardDecisions), {
+            id: cardId,
+            name: deckCard.card.name,
+          }),
+        ),
+      },
+    });
+  }
 
   const updatedDeck = await prisma.deck.findUnique({
     where: { id },

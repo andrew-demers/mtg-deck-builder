@@ -98,6 +98,8 @@ model Deck {
   gradeBreakdown  Json?
   gradeSummary    String?
   gradeSignature  String?
+  /// Cards the player added or cut by hand. Later suggestions must not reverse these.
+  cardDecisions   Json?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   cards           DeckCard[]

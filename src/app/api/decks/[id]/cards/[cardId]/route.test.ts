@@ -8,6 +8,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     deck: {
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
     deckCard: {
       findUnique: vi.fn(),
@@ -26,6 +27,7 @@ const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeo
 const deckCardFindUniqueMock = prisma.deckCard.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckCardDeleteMock = prisma.deckCard.delete as unknown as ReturnType<typeof vi.fn>;
 const deckCardUpdateMock = prisma.deckCard.update as unknown as ReturnType<typeof vi.fn>;
+const deckUpdateMock = prisma.deck.update as unknown as ReturnType<typeof vi.fn>;
 
 function buildRequest(body?: unknown): Request {
   return new Request("http://localhost/api/decks/deck_1/cards/card_1", {
@@ -44,6 +46,7 @@ describe("DELETE /api/decks/[id]/cards/[cardId]", () => {
     deckFindUniqueMock.mockReset();
     deckCardFindUniqueMock.mockReset();
     deckCardDeleteMock.mockReset();
+    deckUpdateMock.mockReset();
   });
 
   it("returns 401 when there is no session", async () => {
@@ -103,6 +106,7 @@ describe("DELETE /api/decks/[id]/cards/[cardId]", () => {
     deckCardFindUniqueMock.mockResolvedValue({
       id: "deckcard_1",
       isCommander: false,
+      card: { name: "Beast Within", type: "Instant" },
     });
 
     const finalDeck = { id: "deck_1", cards: [] };
@@ -113,6 +117,15 @@ describe("DELETE /api/decks/[id]/cards/[cardId]", () => {
 
     expect(response.status).toBe(200);
     expect(deckCardDeleteMock).toHaveBeenCalledWith({ where: { id: "deckcard_1" } });
+    expect(deckUpdateMock).toHaveBeenCalledWith({
+      where: { id: "deck_1" },
+      data: {
+        cardDecisions: {
+          cuts: [{ id: "card_1", name: "Beast Within" }],
+          adds: [],
+        },
+      },
+    });
     expect(data).toEqual(finalDeck);
   });
 });

@@ -1,4 +1,5 @@
 import { getLlmProvider } from "@/lib/llm";
+import { settledEditLines, type CardDecisions } from "@/lib/deck-decisions";
 export { letterGrade } from "@/lib/grade-letter";
 
 export class DeckGradeError extends Error {}
@@ -48,6 +49,8 @@ export interface GradeInput {
   /** Non-commander cards, one entry per card name with its quantity. */
   cards: { name: string; quantity: number }[];
   previous?: PreviousGrade | null;
+  /** Cards the player added or cut on purpose. The critique must not reverse them. */
+  settledEdits?: CardDecisions | null;
   /** Also ask for a free-text critique after the scores, in the same response. */
   withCritique?: boolean;
 }
@@ -69,7 +72,8 @@ export async function gradeDeck(input: GradeInput): Promise<DeckGrade> {
 }
 
 export function buildGradePrompt(input: GradeInput): string {
-  const { goal, commanderName, commanderText, cards, previous, withCritique } = input;
+  const { goal, commanderName, commanderText, cards, previous, settledEdits, withCritique } = input;
+  const settledLines = settledEditLines(settledEdits ?? { cuts: [], adds: [] });
   const cardLines = cards
     .map((card) => `- ${card.name}${card.quantity > 1 ? ` x${card.quantity}` : ""}`)
     .join("\n");
@@ -114,8 +118,10 @@ export function buildGradePrompt(input: GradeInput): string {
           ...previous.added.map((name) => `Added: ${name}`),
           ...previous.removed.map((name) => `Removed: ${name}`),
           "Keep each score the same as before unless these specific changes make that category better or worse. Move a score only as far as the changes justify, and do not re-score categories the changes do not touch.",
+          "These changes were intentional. Do not recommend adding back a removed card or cutting an added card.",
         ]
       : []),
+    ...(settledLines.length > 0 ? ["", ...settledLines] : []),
     "",
     ...(goal
       ? []
@@ -129,7 +135,7 @@ export function buildGradePrompt(input: GradeInput): string {
     "SUMMARY :: Two sentences on the deck's biggest strength and the single change that would most improve its odds of reaching the goal.",
     ...(withCritique
       ? [
-          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck in markdown. Start it with a section headed "## Win condition" covering how the deck actually wins (the specific cards, combos, or game plan), how many cards support it and how redundant they are, how quickly it can realistically get there, and what could stop it. Then cover the deck's strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the ${input.goal ? "goal" : "win condition"}. Put nothing after the critique.`,
+          `Then a line containing exactly ${CRITIQUE_MARKER} followed by a free-text critique of the deck in markdown. Start it with a section headed "## Win condition" covering how the deck actually wins (the specific cards, combos, or game plan), how many cards support it and how redundant they are, how quickly it can realistically get there, and what could stop it. Then cover the deck's strengths, its weaknesses, and concrete suggestions for improvement. Make it consistent with the scores above and relevant to the ${input.goal ? "goal" : "win condition"}.${settledLines.length > 0 ? " Do not reverse the settled edits listed above." : ""} Put nothing after the critique.`,
         ]
       : []),
   ].join("\n");

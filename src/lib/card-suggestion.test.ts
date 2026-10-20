@@ -79,7 +79,11 @@ function mockSuggestion(name: string, tag = "Synergy", reason = "Fits the deck's
   mockCompletion(`${name} :: ${tag} :: ${reason}`);
 }
 
-function mockDeck(deckCards: Record<string, unknown>[], critique: string | null = null) {
+function mockDeck(
+  deckCards: Record<string, unknown>[],
+  critique: string | null = null,
+  cardDecisions: unknown = null,
+) {
   deckFindUniqueMock.mockResolvedValue({
     id: "deck_1",
     userId: "user_1",
@@ -88,6 +92,7 @@ function mockDeck(deckCards: Record<string, unknown>[], critique: string | null 
     commanderCard: commander,
     cards: deckCards,
     critique,
+    cardDecisions,
   });
 }
 
@@ -322,6 +327,21 @@ describe("suggestCards", () => {
     expect(result.map((suggestion) => suggestion.card.id)).toEqual(["unowned_card"]);
   });
 
+  it("does not suggest a card the player already cut", async () => {
+    const cut = card({ id: "cut_card", name: "Beast Within", colorIdentity: ["G"] });
+    const kept = card({ id: "kept", name: "Swords to Plowshares", colorIdentity: ["W"] });
+    mockDeck([], null, { cuts: [{ id: "cut_card", name: "Beast Within" }], adds: [] });
+    collectionFindManyMock.mockResolvedValue([
+      { cardId: cut.id, card: cut, quantity: 1 },
+      { cardId: kept.id, card: kept, quantity: 1 },
+    ]);
+    mockCompletion("Beast Within :: Removal :: Good removal.\nSwords to Plowshares :: Removal :: Better.");
+
+    const result = await suggestCards("deck_1", { allowUnowned: false });
+
+    expect(result.map((suggestion) => suggestion.card.id)).toEqual(["kept"]);
+  });
+
   it("includes the saved critique in the prompt when the deck has one", async () => {
     mockDeck([], "The deck lacks removal.");
     const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
@@ -525,5 +545,18 @@ describe("suggestCardsFromCritique", () => {
 
     expect(result.map((r) => r.card.id)).toEqual(["tutor", "hi"]);
     expect(result[0]).toMatchObject({ tag: "Tutor", reason: "Finds the engine." });
+  });
+
+  it("drops a card the player already cut even when the critique names it", async () => {
+    mockDeck([], "Add Beast Within.", { cuts: [{ id: "beast", name: "Beast Within" }], adds: [] });
+    mockCompletion("Beast Within :: Removal :: The critique wants it.\nSwords to Plowshares :: Removal :: Also.");
+    cardFindManyMock.mockResolvedValue([
+      card({ id: "beast", name: "Beast Within", colorIdentity: ["G"] }),
+      card({ id: "swords", name: "Swords to Plowshares", colorIdentity: ["W"] }),
+    ]);
+
+    const result = await suggestCardsFromCritique("deck_1");
+
+    expect(result.map((suggestion) => suggestion.card.id)).toEqual(["swords"]);
   });
 });
