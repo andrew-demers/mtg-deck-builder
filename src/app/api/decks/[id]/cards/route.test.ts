@@ -12,9 +12,6 @@ vi.mock("@/lib/prisma", () => ({
     card: {
       findUnique: vi.fn(),
     },
-    collectionEntry: {
-      findFirst: vi.fn(),
-    },
     deckCard: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -30,9 +27,6 @@ import { POST } from "@/app/api/decks/[id]/cards/route";
 const authMock = auth as unknown as ReturnType<typeof vi.fn>;
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const cardFindUniqueMock = prisma.card.findUnique as unknown as ReturnType<typeof vi.fn>;
-const collectionFindFirstMock = prisma.collectionEntry.findFirst as unknown as ReturnType<
-  typeof vi.fn
->;
 const deckCardFindUniqueMock = prisma.deckCard.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckCardUpdateMock = prisma.deckCard.update as unknown as ReturnType<typeof vi.fn>;
 const deckCardCreateMock = prisma.deckCard.create as unknown as ReturnType<typeof vi.fn>;
@@ -72,7 +66,6 @@ describe("POST /api/decks/[id]/cards", () => {
     authMock.mockReset();
     deckFindUniqueMock.mockReset();
     cardFindUniqueMock.mockReset();
-    collectionFindFirstMock.mockReset();
     deckCardFindUniqueMock.mockReset();
     deckCardUpdateMock.mockReset();
     deckCardCreateMock.mockReset();
@@ -105,7 +98,6 @@ describe("POST /api/decks/[id]/cards", () => {
       cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(offColorCard);
-    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
 
     const response = await POST(buildRequest({ cardId: "card_off_color" }), buildParams("deck_1"));
 
@@ -126,7 +118,6 @@ describe("POST /api/decks/[id]/cards", () => {
       ],
     });
     cardFindUniqueMock.mockResolvedValue(partnerCard);
-    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
     deckCardFindUniqueMock.mockResolvedValue(null);
 
     const finalDeck = { id: "deck_1", cards: [] };
@@ -150,7 +141,6 @@ describe("POST /api/decks/[id]/cards", () => {
       cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(validCard);
-    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
     deckCardFindUniqueMock.mockResolvedValue(null);
 
     const finalDeck = { id: "deck_1", cards: [] };
@@ -175,7 +165,6 @@ describe("POST /api/decks/[id]/cards", () => {
       cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(validCard);
-    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
     deckCardFindUniqueMock.mockResolvedValue({
       id: "deckcard_1",
       quantity: 1,
@@ -198,7 +187,6 @@ describe("POST /api/decks/[id]/cards", () => {
       cards: [],
     });
     cardFindUniqueMock.mockResolvedValue(land);
-    collectionFindFirstMock.mockResolvedValue({ id: "entry_1" });
     deckCardFindUniqueMock.mockResolvedValue({
       id: "deckcard_land",
       quantity: 40,
