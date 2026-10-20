@@ -89,6 +89,11 @@ interface ReplacementSuggestion {
   reason: string;
 }
 
+interface CutSuggestion {
+  card: CardData;
+  reason: string;
+}
+
 function sortDeckCards(cards: DeckCardData[]): DeckCardData[] {
   return [...cards].sort((a, b) => {
     if (a.isCommander !== b.isCommander) {
@@ -153,6 +158,8 @@ export default function DeckPage() {
   const [replacements, setReplacements] = useState<ReplacementSuggestion[]>([]);
   const [isFindingReplacements, setIsFindingReplacements] = useState(false);
   const [applyingSwapId, setApplyingSwapId] = useState<string | null>(null);
+  const [cutSuggestions, setCutSuggestions] = useState<CutSuggestion[]>([]);
+  const [isFindingCuts, setIsFindingCuts] = useState(false);
 
   useEffect(() => {
     if (!deckId) {
@@ -647,6 +654,38 @@ export default function DeckPage() {
     }
   }
 
+  async function handleGetCuts() {
+    setError(null);
+    setIsFindingCuts(true);
+
+    try {
+      const response = await fetch(`/api/decks/${deckId}/cut-suggestions`, {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(data?.error ?? "Something went wrong getting cut suggestions.");
+        return;
+      }
+
+      setCutSuggestions((await response.json()) as CutSuggestion[]);
+    } catch {
+      setError("Something went wrong getting cut suggestions.");
+    } finally {
+      setIsFindingCuts(false);
+    }
+  }
+
+  async function handleApplyCut(cardId: string) {
+    await handleRemoveCard(cardId);
+    setCutSuggestions((current) =>
+      current.filter((cut) => cut.card.id !== cardId),
+    );
+  }
+
   async function handleApplyReplacement({
     add,
     remove,
@@ -1019,6 +1058,10 @@ export default function DeckPage() {
   );
 
   const deckPrice = computeDeckPrice(deck.cards);
+  const totalCardCount = deck.cards.reduce(
+    (sum, deckCard) => sum + deckCard.quantity,
+    0,
+  );
 
   const buyList = collectionCards ? buildBuyList(deck.cards, ownedCardIds) : [];
   const massEntryUrl = buildMassEntryUrl(buyList);
@@ -1650,6 +1693,53 @@ export default function DeckPage() {
               </ul>
             ) : null}
           </CollapsibleCard>
+
+          {totalCardCount > 100 ? (
+            <CollapsibleCard
+              title={`Cut suggestions (${totalCardCount} cards)`}
+              actions={
+                <Button
+                  onClick={handleGetCuts}
+                  disabled={isFindingCuts}
+                  className="self-start px-5 py-2 text-sm"
+                >
+                  {isFindingCuts ? "Finding cuts..." : "Suggest cuts"}
+                </Button>
+              }
+            >
+              <p className="text-sm text-muted">
+                This deck is {totalCardCount - 100} over 100 cards.
+              </p>
+              {cutSuggestions.length > 0 ? (
+                <ul className="flex flex-col gap-2">
+                  {cutSuggestions.map((cut) => (
+                    <li
+                      key={cut.card.id}
+                      className="flex items-center justify-between gap-4 text-sm"
+                    >
+                      <span>
+                        <CardName
+                          name={cut.card.name}
+                          oracleText={cut.card.oracleText}
+                        />
+                        <span className="block text-xs text-muted">
+                          {cut.reason}
+                        </span>
+                      </span>
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleApplyCut(cut.card.id)}
+                        disabled={removingCardId === cut.card.id}
+                        className="px-4 py-1 text-xs"
+                      >
+                        {removingCardId === cut.card.id ? "Cutting..." : "Cut"}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </CollapsibleCard>
+          ) : null}
 
           <CollapsibleCard
             title="Swap in new cards"

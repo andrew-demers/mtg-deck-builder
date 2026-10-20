@@ -8,8 +8,8 @@ interface AddDeckCardBody {
 }
 
 /**
- * POST /api/decks/[id]/cards - session-scoped. Adds one copy of a card the
- * caller owns to a deck the caller owns (e.g. from the card-suggestion
+ * POST /api/decks/[id]/cards - session-scoped. Adds one copy of a card (owned or
+ * not) to a deck the caller owns (e.g. from the card-suggestion
  * list). This is a minimal "add a single card" path, distinct from
  * `[id]/build`, which regenerates and overwrites the deck's entire card set
  * in one shot - adding here instead increments the existing `DeckCard`
@@ -18,7 +18,7 @@ interface AddDeckCardBody {
  * deck that's already built rather than replacing it.
  *
  * 404 if the deck doesn't exist, 403 if it belongs to a different user, 400
- * if the card doesn't exist, isn't owned by the caller, is outside the
+ * if the card doesn't exist, is outside the
  * deck's commander's color identity, or would violate the singleton rule
  * (a nonland card already in the deck).
  */
@@ -58,14 +58,6 @@ export async function POST(
 
   if (!card) {
     return NextResponse.json({ error: "Card not found" }, { status: 400 });
-  }
-
-  const ownedEntry = await prisma.collectionEntry.findFirst({
-    where: { userId, cardId: card.id },
-  });
-
-  if (!ownedEntry) {
-    return NextResponse.json({ error: "You do not own this card" }, { status: 400 });
   }
 
   // A deck whose commander was just chosen but never built yet has no
