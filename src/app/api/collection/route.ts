@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { upsertCollectionEntry } from "@/lib/collection-entry";
 import { Prisma, type Card, type CollectionEntry } from "@/generated/prisma/client";
 
 type CollectionEntryWithCard = CollectionEntry & { card: Card };
@@ -103,4 +104,54 @@ export async function GET(request: Request): Promise<Response> {
   );
 
   return NextResponse.json(entries);
+}
+
+interface AddCardBody {
+  name?: unknown;
+  quantity?: unknown;
+  foil?: unknown;
+}
+
+/**
+ * POST /api/collection - session-scoped. Adds `quantity` (default 1) copies
+ * of the named card to the user's collection, on top of whatever is already
+ * owned. The name is matched against the synced card catalog (case-insensitive;
+ * a multi-faced card also matches by its front face), so it can come straight
+ * from Scryfall autocomplete. 404 if the catalog has no such card.
+ */
+export async function POST(request: Request): Promise<Response> {
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => null)) as AddCardBody | null;
+  const name = typeof body?.name === "string" ? body.name.trim() : "";
+  const quantity = body?.quantity === undefined ? 1 : body.quantity;
+
+  if (!name) {
+    return NextResponse.json({ error: "name is required" }, { status: 400 });
+  }
+
+  if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1) {
+    return NextResponse.json({ error: "quantity must be a positive integer" }, { status: 400 });
+  }
+
+  const card =
+    (await prisma.card.findFirst({ where: { name: { equals: name, mode: "insensitive" } } })) ??
+    (await prisma.card.findFirst({ where: { name: { startsWith: `${name} // `, mode: "insensitive" } } }));
+
+  if (!card) {
+    return NextResponse.json({ error: `No card named "${name}" in the card catalog` }, { status: 404 });
+  }
+
+  await upsertCollectionEntry(userId, card.id, {
+    quantity,
+    foil: body?.foil === true,
+    onConflict: "add",
+  });
+
+  return NextResponse.json({ cardId: card.id, name: card.name }, { status: 201 });
 }
