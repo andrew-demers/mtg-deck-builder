@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { DEFAULT_GRADE_GOAL, gradeAndCritiqueDeck, type DeckGrade } from "@/lib/deck-grade";
+import { parseCardDecisions } from "@/lib/deck-decisions";
 import { buildGradeInput, loadEarlierGraded, snapshotOf } from "@/lib/deck-version";
 import { deckSignature } from "@/lib/deck-signature";
 
@@ -81,7 +82,12 @@ export async function critiqueAndGradeDeck(deckId: string): Promise<CritiqueResu
   const goal = deck.goal?.trim() || null;
 
   const { grade, critique } = await gradeAndCritiqueDeck(
-    buildGradeInput(snapshotOf(deck), goal, await loadEarlierGraded(deckId)),
+    buildGradeInput(
+      snapshotOf(deck),
+      goal,
+      await loadEarlierGraded(deckId),
+      parseCardDecisions(deck.cardDecisions),
+    ),
   );
 
   return {

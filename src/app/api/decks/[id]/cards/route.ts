@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isBasicLand, unionColorIdentity, validateColorIdentity } from "@/lib/commander-legality";
+import { cardDecisionsJson, decisionsAfterAdd, parseCardDecisions } from "@/lib/deck-decisions";
 
 interface AddDeckCardBody {
   cardId?: string;
@@ -98,6 +99,21 @@ export async function POST(
     await prisma.deckCard.create({
       data: { deckId: id, cardId: card.id, quantity: 1, isCommander: false },
     });
+
+    // Remember nonbasic adds so the next cut pass does not turn around and cut them.
+    if (!isBasicLand(card)) {
+      await prisma.deck.update({
+        where: { id },
+        data: {
+          cardDecisions: cardDecisionsJson(
+            decisionsAfterAdd(parseCardDecisions(deck.cardDecisions), {
+              id: card.id,
+              name: card.name,
+            }),
+          ),
+        },
+      });
+    }
   }
 
   const updatedDeck = await prisma.deck.findUnique({

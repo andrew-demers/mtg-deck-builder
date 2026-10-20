@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { DEFAULT_GRADE_GOAL, gradeDeck, type DeckGrade, type GradeCategory, type GradeInput } from "@/lib/deck-grade";
+import { parseCardDecisions, type CardDecisions } from "@/lib/deck-decisions";
 import { deckSignature } from "@/lib/deck-signature";
 import type { Prisma } from "@/generated/prisma/client";
 
@@ -178,6 +179,7 @@ export function buildGradeInput(
   snapshot: DeckSnapshot,
   goal: string | null,
   earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
+  settledEdits?: CardDecisions | null,
 ): GradeInput {
   const comparable = goal && earlier?.grade && earlier.grade.goal === goal ? earlier : null;
   const changes = comparable ? diffSnapshots(comparable.snapshot, snapshot) : null;
@@ -196,6 +198,7 @@ export function buildGradeInput(
             removed: changes.removed.map(formatCard),
           }
         : null,
+    settledEdits,
   };
 }
 
@@ -203,8 +206,9 @@ async function gradeSnapshot(
   snapshot: DeckSnapshot,
   goal: string | null,
   earlier: { snapshot: DeckSnapshot; grade: VersionGrade | null } | null,
+  settledEdits?: CardDecisions | null,
 ): Promise<DeckGrade> {
-  return gradeDeck(buildGradeInput(snapshot, goal, earlier));
+  return gradeDeck(buildGradeInput(snapshot, goal, earlier, settledEdits));
 }
 
 /** The closest version before `number` that has a grade, as a comparison baseline. */
@@ -359,7 +363,12 @@ export async function gradeCurrentDeck(
 
   let grade: DeckGrade;
   try {
-    grade = await gradeSnapshot(snapshotOf(deck), goal, await loadEarlierGraded(deckId));
+    grade = await gradeSnapshot(
+      snapshotOf(deck),
+      goal,
+      await loadEarlierGraded(deckId),
+      parseCardDecisions(deck.cardDecisions),
+    );
   } catch (error) {
     throw new DeckVersionError(error instanceof Error ? error.message : "Couldn't grade this deck");
   }

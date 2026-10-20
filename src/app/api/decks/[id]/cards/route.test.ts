@@ -8,6 +8,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     deck: {
       findUnique: vi.fn(),
+      update: vi.fn(),
     },
     card: {
       findUnique: vi.fn(),
@@ -30,6 +31,7 @@ const cardFindUniqueMock = prisma.card.findUnique as unknown as ReturnType<typeo
 const deckCardFindUniqueMock = prisma.deckCard.findUnique as unknown as ReturnType<typeof vi.fn>;
 const deckCardUpdateMock = prisma.deckCard.update as unknown as ReturnType<typeof vi.fn>;
 const deckCardCreateMock = prisma.deckCard.create as unknown as ReturnType<typeof vi.fn>;
+const deckUpdateMock = prisma.deck.update as unknown as ReturnType<typeof vi.fn>;
 
 function buildRequest(body: unknown): Request {
   return new Request("http://localhost/api/decks/deck_1/cards", {
@@ -69,6 +71,7 @@ describe("POST /api/decks/[id]/cards", () => {
     deckCardFindUniqueMock.mockReset();
     deckCardUpdateMock.mockReset();
     deckCardCreateMock.mockReset();
+    deckUpdateMock.mockReset();
   });
 
   it("returns 401 when there is no session", async () => {
@@ -153,6 +156,15 @@ describe("POST /api/decks/[id]/cards", () => {
     expect(deckCardCreateMock).toHaveBeenCalledWith({
       data: { deckId: "deck_1", cardId: "card_valid", quantity: 1, isCommander: false },
     });
+    expect(deckUpdateMock).toHaveBeenCalledWith({
+      where: { id: "deck_1" },
+      data: {
+        cardDecisions: {
+          cuts: [],
+          adds: [{ id: "card_valid", name: "Valid Card" }],
+        },
+      },
+    });
     expect(data).toEqual(finalDeck);
   });
 
@@ -201,5 +213,6 @@ describe("POST /api/decks/[id]/cards", () => {
       where: { id: "deckcard_land" },
       data: { quantity: 41 },
     });
+    expect(deckUpdateMock).not.toHaveBeenCalled();
   });
 });

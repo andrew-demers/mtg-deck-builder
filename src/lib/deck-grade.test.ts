@@ -79,6 +79,22 @@ describe("buildGradePrompt", () => {
     expect(prompt).toContain("- Interaction: 55");
     expect(prompt).toContain("Added: Swords to Plowshares");
     expect(prompt).toContain("Removed: Rhystic Study");
+    expect(prompt).toContain("Do not recommend adding back a removed card");
+  });
+
+  it("tells the critique not to reverse cards the player already added or cut", () => {
+    const prompt = buildGradePrompt({
+      ...base,
+      withCritique: true,
+      settledEdits: {
+        cuts: [{ id: "beast", name: "Beast Within" }],
+        adds: [{ id: "swords", name: "Swords to Plowshares" }],
+      },
+    });
+
+    expect(prompt).toContain("Do not recommend adding back: Beast Within.");
+    expect(prompt).toContain("Do not recommend cutting: Swords to Plowshares.");
+    expect(prompt).toContain("Do not reverse the settled edits listed above.");
   });
 });
 

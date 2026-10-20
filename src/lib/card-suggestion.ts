@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { parseCardDecisions, settledEditLines, type CardDecisions } from "@/lib/deck-decisions";
 import {
   isBasicLand,
   REQUIRED_DECK_SIZE,
@@ -45,7 +46,8 @@ export interface SuggestCardsOptions {
  * commander's color identity. Cards with zero remaining availability (fully
  * used already) are excluded from the owned pool, and cards already in the
  * deck are excluded from the catalog pool, so neither can be suggested
- * again. Both pools are pre-filtered to the commander's color identity
+ * again. Cards the player has cut are excluded too, so a later run cannot
+ * recommend adding them straight back. Both pools are pre-filtered to the commander's color identity
  * before ever reaching the LLM, since a large off-color collection would
  * otherwise crowd out legal candidates in the prompt.
  *
@@ -113,6 +115,8 @@ export async function suggestCards(
   }
 
   const colorIdentity = unionColorIdentity(commanders);
+  const decisions = parseCardDecisions(deck.cardDecisions);
+  const cutIds = new Set(decisions.cuts.map((card) => card.id));
 
   // In budget mode the player wants cards to buy, so owned cards already
   // committed to another deck don't count as free options.
@@ -141,7 +145,7 @@ export async function suggestCards(
     // legal candidates in the prompt and burning suggestion slots on cards
     // that would just get rejected by validateColorIdentity below anyway.
     const inOtherDeck = otherDeckCardIds.has(cardId) && !isBasicLand(card);
-    if (hasRemainingCopies && !inOtherDeck && validateColorIdentity(colorIdentity, [card])) {
+    if (hasRemainingCopies && !inOtherDeck && !cutIds.has(cardId) && validateColorIdentity(colorIdentity, [card])) {
       remainingPool.push(card);
     }
   }
@@ -153,6 +157,8 @@ export async function suggestCards(
     // out of it (in another deck), so the catalog must not re-add them as
     // cards to buy.
     ...(budgetUsd !== undefined ? Array.from(ownedByCardId.keys()) : []),
+    // A card the player cut stays out of the pool, so the next run cannot add it back.
+    ...decisions.cuts.map((card) => card.id),
   ];
   let pool: Card[];
   if (budgetUsd !== undefined) {
@@ -199,7 +205,16 @@ export async function suggestCards(
   const ownedIds = new Set(remainingPool.map((card) => card.id));
 
   const completion = await getLlmProvider().complete(
-    buildPrompt(commanders, pool, allowUnowned, candidateCount, budgetUsd, ownedIds, deck.critique),
+    buildPrompt(
+      commanders,
+      pool,
+      allowUnowned,
+      candidateCount,
+      budgetUsd,
+      ownedIds,
+      deck.critique,
+      decisions,
+    ),
   );
   const suggestions = parseSuggestions(completion);
 
@@ -208,8 +223,8 @@ export async function suggestCards(
   const matched = new Map<string, SuggestedCard>();
   for (const { name, tag, reason } of suggestions) {
     const card = cardsByName.get(normalize(name));
-    if (!card) {
-      continue; // hallucinated, or owned but with no remaining availability
+    if (!card || cutIds.has(card.id)) {
+      continue; // hallucinated, already cut by the player, or owned but with no remaining availability
     }
 
     if (!validateColorIdentity(colorIdentity, [card])) {
@@ -270,6 +285,8 @@ export async function suggestCardsFromCritique(deckId: string): Promise<Suggeste
       ? commanderDeckCards.map((deckCard) => deckCard.card)
       : [deck.commanderCard];
   const colorIdentity = unionColorIdentity(commanders);
+  const decisions = parseCardDecisions(deck.cardDecisions);
+  const cutIds = new Set(decisions.cuts.map((card) => card.id));
   const inDeckIds = new Set([...commanders.map((c) => c.id), ...deck.cards.map((c) => c.cardId)]);
 
   const completion = await getLlmProvider().complete(
@@ -300,6 +317,7 @@ export async function suggestCardsFromCritique(deckId: string): Promise<Suggeste
     if (
       !card ||
       inDeckIds.has(card.id) ||
+      cutIds.has(card.id) ||
       matched.has(card.id) ||
       !validateColorIdentity(colorIdentity, [card])
     ) {
@@ -390,6 +408,7 @@ function buildPrompt(
   budgetUsd?: number,
   ownedIds: Set<string> = new Set(),
   critique: string | null = null,
+  decisions: CardDecisions = { cuts: [], adds: [] },
 ): string {
   const names = pool
     .map((card) => {
@@ -419,6 +438,7 @@ function buildPrompt(
     ...(allowUnowned
       ? ["Pick the strongest cards for this deck whether or not the player owns them; ownership is not a factor."]
       : []),
+    ...settledEditLines(decisions),
     ...(critique
       ? [
           "",

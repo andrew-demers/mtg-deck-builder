@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { isBasicLand, unionColorIdentity } from "@/lib/commander-legality";
+import { parseCardDecisions, settledEditLines } from "@/lib/deck-decisions";
 import type { Card } from "@/generated/prisma/client";
 
 export const COMMANDER_DECK_SIZE = 100;
@@ -18,8 +19,10 @@ export interface CutSuggestion {
  * the commander and basic lands are never offered, and as with
  * `suggestReplacements` the LLM's output is matched case-insensitively
  * against what was offered, so unknown or duplicate names are dropped (the
- * result can therefore be shorter than the number requested). A deck of 100
- * cards or fewer is a `CardCutError`.
+ * result can therefore be shorter than the number requested). Cards the
+ * player just added are left out when other cards can cover the surplus, so
+ * a card that was just put in is not immediately offered as a cut. A deck of
+ * 100 cards or fewer is a `CardCutError`.
  */
 export async function suggestCuts(deckId: string): Promise<CutSuggestion[]> {
   const deck = await prisma.deck.findUnique({
@@ -49,16 +52,24 @@ export async function suggestCuts(deckId: string): Promise<CutSuggestion[]> {
       : [deck.commanderCard];
   const colorIdentity = unionColorIdentity(commanders);
 
-  const cuttable = deck.cards
+  const decisions = parseCardDecisions(deck.cardDecisions);
+  const protectedIds = new Set(decisions.adds.map((card) => card.id));
+  const allCuttable = deck.cards
     .filter((deckCard) => !deckCard.isCommander && !isBasicLand(deckCard.card))
     .map((deckCard) => deckCard.card);
 
-  if (cuttable.length === 0) {
+  if (allCuttable.length === 0) {
     throw new CardCutError("Deck has no cards to cut");
   }
 
+  // Leave cards the player just added alone when something else can be cut
+  // to reach 100. If those adds are the only surplus, they can still be cut.
+  const unprotected = allCuttable.filter((card) => !protectedIds.has(card.id));
+  const canSpareAdds = unprotected.length >= excess;
+  const cuttable = canSpareAdds ? unprotected : allCuttable;
+
   const completion = await getLlmProvider().complete(
-    buildPrompt(commanders, colorIdentity, cuttable, excess),
+    buildPrompt(commanders, colorIdentity, cuttable, excess, canSpareAdds ? decisions : null, canSpareAdds ? [] : decisions.adds.map((card) => card.name)),
   );
 
   const cuttableByName = new Map(cuttable.map((card) => [normalize(card.name), card]));
@@ -104,6 +115,8 @@ function buildPrompt(
   colorIdentity: string[],
   deckCards: Card[],
   count: number,
+  decisions: ReturnType<typeof parseCardDecisions> | null = null,
+  addedNamesToCutLast: string[] = [],
 ): string {
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const deckList = deckCards
@@ -116,6 +129,12 @@ function buildPrompt(
     "",
     `Pick exactly ${count} card${count === 1 ? "" : "s"} to cut: the weakest or least synergistic with the commander and the rest of the deck. Keep the mana base and core strategy functional.`,
     "Only cut cards from the deck list, and never pick the same card twice.",
+    ...(decisions ? settledEditLines(decisions) : []),
+    ...(addedNamesToCutLast.length > 0
+      ? [
+          `The player just added ${addedNamesToCutLast.join(", ")}. Cut those only if you cannot reach ${count} cuts without them.`,
+        ]
+      : []),
     "Respond with one cut per line in exactly this format and nothing else:",
     "Deck Card To Cut :: One-sentence reason it should go.",
     "",
