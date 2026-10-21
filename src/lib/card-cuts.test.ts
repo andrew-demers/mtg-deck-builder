@@ -10,12 +10,28 @@ vi.mock("@/lib/llm", () => ({
   getLlmProvider: vi.fn(),
 }));
 
+vi.mock("@/lib/deck-grade", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/deck-grade")>("@/lib/deck-grade");
+  return { ...actual, gradeDeck: vi.fn() };
+});
+
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { GRADE_CATEGORIES, gradeDeck, type GradeInput } from "@/lib/deck-grade";
 import { suggestCuts, CardCutError } from "@/lib/card-cuts";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
+const gradeDeckMock = gradeDeck as unknown as ReturnType<typeof vi.fn>;
+
+function raisingGrade(input: GradeInput) {
+  const score = input.previous ? input.previous.score + 4 : 60;
+  return {
+    score,
+    breakdown: GRADE_CATEGORIES.map((category) => ({ category, score, note: "Note." })),
+    summary: "Summary.",
+  };
+}
 
 function card(id: string, name: string, type = "Creature"): Record<string, unknown> {
   return { id, name, type, colorIdentity: ["W"], oracleText: null };
@@ -50,6 +66,8 @@ describe("suggestCuts", () => {
   beforeEach(() => {
     deckFindUniqueMock.mockReset();
     getLlmProviderMock.mockReset();
+    gradeDeckMock.mockReset();
+    gradeDeckMock.mockImplementation(raisingGrade);
   });
 
   it("rejects a deck of 100 cards or fewer", async () => {
@@ -96,5 +114,25 @@ describe("suggestCuts", () => {
 
     expect(cuts.map((cut) => cut.card.id)).toEqual(["a", "b"]);
     expect(complete.mock.calls[0][0]).toContain("Cut those only if you cannot reach 2 cuts");
+    expect(complete.mock.calls[0][0]).toContain("current overall grade is 60 out of 100");
+  });
+
+  it("drops a cut that does not raise the deck's grade", async () => {
+    mockDeck(102);
+    mockLlm("Old A :: Weak.\nOld B :: Also weak.");
+    gradeDeckMock.mockImplementation(async (input: GradeInput) => {
+      const removed = input.previous?.removed ?? [];
+      const score = removed.includes("Old A") ? 64 : 60;
+      return {
+        score,
+        breakdown: GRADE_CATEGORIES.map((category) => ({ category, score, note: "Note." })),
+        summary: "Summary.",
+      };
+    });
+
+    const cuts = await suggestCuts("deck_1");
+
+    expect(cuts.map((cut) => cut.card.name)).toEqual(["Old A"]);
+    expect(cuts[0].reason).toContain("Raises the grade from 60 to 64.");
   });
 });

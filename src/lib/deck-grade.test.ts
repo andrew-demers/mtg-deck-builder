@@ -155,5 +155,6 @@ describe("parseGradeAndCritique", () => {
     const prompt = buildGradePrompt({ goal: "g", commanderName: "c", cards: [], withCritique: true });
 
     expect(prompt).toContain('"## Win condition"');
+    expect(prompt).toContain("raise the overall grade above the scores you just gave");
   });
 });
