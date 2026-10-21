@@ -10,6 +10,9 @@ import {
 import { selectWithinBudget } from "@/lib/budget-selection";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { refreshCardPrices } from "@/lib/card-prices";
+import { deckSignature } from "@/lib/deck-signature";
+import { GRADE_CATEGORIES } from "@/lib/deck-grade";
+import { letterGrade, nextGradeTarget, type GradeImpact } from "@/lib/grade-letter";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -18,7 +21,18 @@ export interface SuggestedCard {
   card: Card;
   tag: string;
   reason: string;
+  /** The grade category this card is expected to raise, when suggestions were aimed at the next letter grade. */
+  impact?: GradeImpact;
 }
+
+/** The deck's saved grade, used to aim suggestions at the next letter. */
+interface CurrentGrade {
+  score: number;
+  breakdown: { category: string; score: number }[];
+}
+
+/** A single card can't plausibly move a category further than this. */
+const MAX_IMPACT_POINTS = 15;
 
 export interface SuggestCardsOptions {
   /**
@@ -203,6 +217,7 @@ export async function suggestCards(
   const candidateCount =
     budgetUsd !== undefined ? Math.min(pool.length, requestCount * 2) : requestCount;
   const ownedIds = new Set(remainingPool.map((card) => card.id));
+  const currentGrade = currentGradeOf(deck);
 
   const completion = await getLlmProvider().complete(
     buildPrompt(
@@ -214,6 +229,7 @@ export async function suggestCards(
       ownedIds,
       deck.critique,
       decisions,
+      currentGrade,
     ),
   );
   const suggestions = parseSuggestions(completion);
@@ -221,7 +237,7 @@ export async function suggestCards(
   const cardsByName = new Map(pool.map((card) => [normalize(card.name), card]));
 
   const matched = new Map<string, SuggestedCard>();
-  for (const { name, tag, reason } of suggestions) {
+  for (const { name, tag, reason, impact } of suggestions) {
     const card = cardsByName.get(normalize(name));
     if (!card || cutIds.has(card.id)) {
       continue; // hallucinated, already cut by the player, or owned but with no remaining availability
@@ -231,7 +247,7 @@ export async function suggestCards(
       continue; // outside the commander's color identity
     }
 
-    matched.set(card.id, { card, tag, reason });
+    matched.set(card.id, { card, tag, reason, ...(currentGrade && impact ? { impact } : {}) });
   }
 
   const ranked = await withFreshPrices(Array.from(matched.values()));
@@ -355,6 +371,36 @@ async function withFreshPrices(suggestions: SuggestedCard[]): Promise<SuggestedC
   return suggestions.map((suggestion) => ({ ...suggestion, card: fresh.get(suggestion.card.id) ?? suggestion.card }));
 }
 
+/**
+ * The deck's saved grade, or null when there is none or it no longer
+ * describes the deck (the cards or the goal changed since it was graded), so
+ * suggestions are never aimed off a stale score.
+ */
+function currentGradeOf(deck: {
+  goal: string | null;
+  gradeScore: number | null;
+  gradeGoal: string | null;
+  gradeBreakdown: unknown;
+  gradeSignature: string | null;
+  commanderCardId: string | null;
+  cards: { cardId: string; quantity: number; isCommander: boolean }[];
+}): CurrentGrade | null {
+  if (typeof deck.gradeScore !== "number" || !Array.isArray(deck.gradeBreakdown)) {
+    return null;
+  }
+  const goal = deck.goal?.trim();
+  if (goal && deck.gradeGoal !== goal) {
+    return null;
+  }
+  if (deck.gradeSignature !== deckSignature(deck.commanderCardId, deck.cards)) {
+    return null;
+  }
+  const breakdown = (deck.gradeBreakdown as { category?: unknown; score?: unknown }[])
+    .filter((entry) => typeof entry?.category === "string" && typeof entry.score === "number")
+    .map((entry) => ({ category: entry.category as string, score: entry.score as number }));
+  return breakdown.length > 0 ? { score: deck.gradeScore, breakdown } : null;
+}
+
 function normalize(name: string): string {
   return name.trim().toLowerCase();
 }
@@ -388,16 +434,44 @@ async function findCatalogCardsInColorIdentity(
   });
 }
 
-function parseSuggestions(completion: string): { name: string; tag: string; reason: string }[] {
+interface ParsedSuggestion {
+  name: string;
+  tag: string;
+  reason: string;
+  impact?: GradeImpact;
+}
+
+/**
+ * Reads "Name :: Tag :: Reason" lines, or "Name :: Tag :: Category :: +N ::
+ * Reason" when suggestions were aimed at a grade. An impact naming an unknown
+ * category or an unreadable number is dropped (the card is kept), and its
+ * points are capped so one card can't claim to carry the whole grade.
+ */
+function parseSuggestions(completion: string): ParsedSuggestion[] {
   return completion
     .split("\n")
     .map((line) => line.replace(/^[\s\d.\-)]+/, "").trim())
     .filter((line) => line.length > 0)
-    .map((line) => {
-      const [name, tag, reason] = line.split("::").map((part) => part?.trim());
+    .map((line): ParsedSuggestion | null => {
+      const parts = line.split("::").map((part) => part.trim());
+      if (parts.length >= 5) {
+        const [name, tag, categoryText, pointsText, ...reason] = parts;
+        if (!name || !tag || reason.join("").length === 0) return null;
+        return { name, tag, reason: reason.join(" :: "), ...parseImpact(categoryText, pointsText) };
+      }
+      const [name, tag, reason] = parts;
       return name && tag && reason ? { name, tag, reason } : null;
     })
-    .filter((suggestion): suggestion is { name: string; tag: string; reason: string } => suggestion !== null);
+    .filter((suggestion): suggestion is ParsedSuggestion => suggestion !== null);
+}
+
+function parseImpact(categoryText: string, pointsText: string): { impact?: GradeImpact } {
+  const category = GRADE_CATEGORIES.find((name) => name.toLowerCase() === categoryText.toLowerCase());
+  const points = Number(pointsText.replace(/^\+/, ""));
+  if (!category || !Number.isFinite(points) || points <= 0) {
+    return {};
+  }
+  return { impact: { category, points: Math.min(Math.round(points), MAX_IMPACT_POINTS) } };
 }
 
 function buildPrompt(
@@ -409,6 +483,7 @@ function buildPrompt(
   ownedIds: Set<string> = new Set(),
   critique: string | null = null,
   decisions: CardDecisions = { cuts: [], adds: [] },
+  currentGrade: CurrentGrade | null = null,
 ): string {
   const names = pool
     .map((card) => {
@@ -454,10 +529,38 @@ function buildPrompt(
           "Rank the suggestions from best to worst for this deck, favoring strong cards that are cheap for what they do; the cheapest combination that fits will be chosen from your ranking.",
         ]
       : []),
+    ...gradeTargetLines(currentGrade),
     "Respond with one suggestion per line in exactly this format and nothing else:",
-    "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",
+    currentGrade
+      ? "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: Grade category it raises :: +points it adds to that category :: One-sentence reason this card was suggested for this deck."
+      : "Card Name :: Short tag (e.g. Ramp, Removal, Card Draw, Synergy: <theme>) :: One-sentence reason this card was suggested for this deck.",
     "",
     `${allowUnowned ? "Available" : "Owned"} cards:`,
     names,
   ].join("\n");
+}
+
+/**
+ * Prompt lines that aim the suggestions at the deck's next letter grade: the
+ * current category scores, the overall score to reach, and how many category
+ * points that takes (the grade is the mean of the categories). Empty without a
+ * current grade or once the deck is an A+.
+ */
+function gradeTargetLines(currentGrade: CurrentGrade | null): string[] {
+  if (!currentGrade) {
+    return [];
+  }
+  const target = nextGradeTarget(currentGrade.score);
+  if (!target) {
+    return [];
+  }
+  const pointsNeeded = (target.minScore - currentGrade.score) * currentGrade.breakdown.length;
+  return [
+    "",
+    `The deck currently grades ${letterGrade(currentGrade.score)} (${currentGrade.score}/100). The grade is the average of these category scores:`,
+    ...currentGrade.breakdown.map((entry) => `- ${entry.category}: ${entry.score}`),
+    `Pick suggestions that together raise the deck to a ${target.letter} (${target.minScore}/100 or better). That takes about ${pointsNeeded} category points in total across the categories above.`,
+    "Go after the lowest-scoring categories first, since they have the most room to improve. For each card, name the one category it raises most and estimate honestly how many points it adds there (usually 1-8).",
+    "",
+  ];
 }

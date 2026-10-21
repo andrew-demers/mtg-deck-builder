@@ -10,8 +10,15 @@ import CardName from "@/components/card-name";
 import CollapsibleCard from "@/components/collapsible-card";
 import Markdown from "@/components/markdown";
 import DeckVersions from "@/components/deck-versions";
+import ExportMenu from "@/components/export-menu";
 import type { VersionGrade } from "@/components/grade-panel";
 import { deckSignature } from "@/lib/deck-signature";
+import {
+  letterGrade,
+  nextGradeTarget,
+  projectGradeScore,
+  type GradeImpact,
+} from "@/lib/grade-letter";
 import { PIP_COLORS, WUBRG_ORDER } from "@/components/mana-cost";
 import { computeDeckPrice, formatUsd } from "@/lib/deck-price";
 import { selectWithinBudget } from "@/lib/budget-selection";
@@ -73,6 +80,7 @@ interface SuggestedCard {
   card: CardData;
   tag: string;
   reason: string;
+  impact?: GradeImpact;
 }
 
 interface TokenRecommendation {
@@ -1057,6 +1065,29 @@ export default function DeckPage() {
         card.name.toLowerCase().includes(normalizedCommanderQuery)),
   );
 
+  // The saved grade only counts while it still describes this deck and goal.
+  const currentGrade: VersionGrade | null =
+    deck.gradeScore !== null &&
+    deck.gradeGoal &&
+    (!deck.goal?.trim() || deck.gradeGoal === deck.goal.trim()) &&
+    deck.gradeBreakdown &&
+    deck.gradeSignature === deckSignature(deck.commanderCardId, deck.cards)
+      ? {
+          score: deck.gradeScore,
+          goal: deck.gradeGoal,
+          breakdown: deck.gradeBreakdown,
+          summary: deck.gradeSummary ?? "",
+        }
+      : null;
+  const suggestionImpacts = suggestedCards.flatMap(({ impact }) =>
+    impact ? [impact] : [],
+  );
+  const gradeTarget = currentGrade ? nextGradeTarget(currentGrade.score) : null;
+  const projectedScore =
+    currentGrade && suggestionImpacts.length > 0
+      ? projectGradeScore(currentGrade.breakdown, suggestionImpacts)
+      : null;
+
   const deckPrice = computeDeckPrice(deck.cards);
   const totalCardCount = deck.cards.reduce(
     (sum, deckCard) => sum + deckCard.quantity,
@@ -1129,27 +1160,7 @@ export default function DeckPage() {
           </form>
         )}
         <div className="flex gap-2">
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export`}
-          >
-            Export CSV
-          </LinkButton>
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export?format=arena`}
-          >
-            Export Arena
-          </LinkButton>
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export?format=mtgo`}
-          >
-            Export MTGO
-          </LinkButton>
+          <ExportMenu deckId={deckId} />
           <Button
             variant="secondary"
             className="px-4 py-1 text-xs text-danger"
@@ -1299,21 +1310,7 @@ export default function DeckPage() {
           <DeckVersions
             deckId={deckId}
             goal={deck.goal}
-            currentGrade={
-              deck.gradeScore !== null &&
-              deck.gradeGoal &&
-              (!deck.goal?.trim() || deck.gradeGoal === deck.goal.trim()) &&
-              deck.gradeBreakdown &&
-              deck.gradeSignature ===
-                deckSignature(deck.commanderCardId, deck.cards)
-                ? {
-                    score: deck.gradeScore,
-                    goal: deck.gradeGoal,
-                    breakdown: deck.gradeBreakdown,
-                    summary: deck.gradeSummary ?? "",
-                  }
-                : null
-            }
+            currentGrade={currentGrade}
             onGoalSaved={(updated) => setDeck(updated as DeckData)}
             onRestored={(restored) => setDeck(restored as DeckData)}
           />
@@ -1632,6 +1629,34 @@ export default function DeckPage() {
                   : "Best cards for budget"}
               </Button>
             </div>
+            {currentGrade && gradeTarget && suggestedCards.length === 0 ? (
+              <p className="text-sm text-muted">
+                Suggestions aim to take this deck from{" "}
+                {letterGrade(currentGrade.score)} to {gradeTarget.letter} (
+                {gradeTarget.minScore}+).
+              </p>
+            ) : null}
+            {!currentGrade && suggestedCards.length === 0 ? (
+              <p className="text-sm text-muted">
+                Get a critique and grade first to aim suggestions at the next
+                letter grade.
+              </p>
+            ) : null}
+            {currentGrade && projectedScore !== null ? (
+              <p className="text-sm">
+                Adding all of these:{" "}
+                <span className="font-semibold">
+                  {letterGrade(currentGrade.score)} ({currentGrade.score})
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-mana-green">
+                  {letterGrade(projectedScore)} ({projectedScore})
+                </span>{" "}
+                <span className="text-muted">
+                  estimated; re-grade after adding to confirm
+                </span>
+              </p>
+            ) : null}
             {suggestedCards.length > 0 ? (
               <Button
                 variant="secondary"
@@ -1646,7 +1671,7 @@ export default function DeckPage() {
             ) : null}
             {suggestedCards.length > 0 ? (
               <ul className="flex flex-col gap-2">
-                {suggestedCards.map(({ card, tag, reason }) => (
+                {suggestedCards.map(({ card, tag, reason, impact }) => (
                   <li
                     key={card.id}
                     className="flex items-center justify-between gap-4 text-sm"
@@ -1678,6 +1703,11 @@ export default function DeckPage() {
                       <span className="ml-2 font-medium">
                         {formatUsd(card.priceUsd)}
                       </span>
+                      {impact ? (
+                        <span className="ml-2 rounded-full bg-mana-green/10 px-2 py-0.5 text-xs font-semibold text-mana-green">
+                          {impact.category} +{impact.points}
+                        </span>
+                      ) : null}
                       <span className="block text-xs text-muted">{reason}</span>
                     </span>
                     <Button

@@ -34,6 +34,7 @@ import { getLlmProvider } from "@/lib/llm";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { refreshCardPrices } from "@/lib/card-prices";
 import { suggestCards, suggestCardsFromCritique, CardSuggestionError } from "@/lib/card-suggestion";
+import { deckSignature } from "@/lib/deck-signature";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<
@@ -353,6 +354,65 @@ describe("suggestCards", () => {
     await suggestCards("deck_1");
 
     expect(complete.mock.calls[0][0]).toContain("The deck lacks removal.");
+  });
+
+  describe("aimed at the next letter grade", () => {
+    function mockGradedDeck(signature: string) {
+      deckFindUniqueMock.mockResolvedValue({
+        id: "deck_1",
+        userId: "user_1",
+        name: "Test Deck",
+        commanderCardId: commander.id,
+        commanderCard: commander,
+        cards: [],
+        critique: null,
+        cardDecisions: null,
+        goal: null,
+        gradeScore: 74,
+        gradeGoal: "Win with counters",
+        gradeBreakdown: [
+          { category: "Interaction", score: 60, note: "" },
+          { category: "Card advantage", score: 88, note: "" },
+        ],
+        gradeSignature: signature,
+      });
+    }
+
+    it("puts the current scores and the next letter in the prompt and returns each card's impact", async () => {
+      mockGradedDeck(deckSignature(commander.id as string, []));
+      const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
+      collectionFindManyMock.mockResolvedValue([]);
+      cardFindManyMock.mockResolvedValue([unowned]);
+      const complete = vi
+        .fn()
+        .mockResolvedValue("Unowned Card :: Removal :: Interaction :: +40 :: Answers threats.");
+      getLlmProviderMock.mockReturnValue({ complete });
+
+      const result = await suggestCards("deck_1");
+
+      const prompt = complete.mock.calls[0][0] as string;
+      expect(prompt).toContain("currently grades C (74/100)");
+      expect(prompt).toContain("- Interaction: 60");
+      expect(prompt).toContain("raise the deck to a B (83/100 or better)");
+      expect(result[0]).toMatchObject({
+        reason: "Answers threats.",
+        impact: { category: "Interaction", points: 15 },
+      });
+    });
+
+    it("ignores a grade that no longer matches the deck", async () => {
+      mockGradedDeck("stale");
+      const unowned = card({ id: "unowned_card", name: "Unowned Card", colorIdentity: ["W"] });
+      collectionFindManyMock.mockResolvedValue([]);
+      cardFindManyMock.mockResolvedValue([unowned]);
+      const complete = vi.fn().mockResolvedValue("Unowned Card :: Removal :: Answers threats.");
+      getLlmProviderMock.mockReturnValue({ complete });
+
+      const result = await suggestCards("deck_1");
+
+      expect(complete.mock.calls[0][0]).not.toContain("currently grades");
+      expect(result[0].impact).toBeUndefined();
+    });
   });
 
   it("accepts an unowned catalog suggestion when allowUnowned is true", async () => {
