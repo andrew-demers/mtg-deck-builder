@@ -5,6 +5,15 @@ import {
   unionColorIdentity,
   validateColorIdentity,
 } from "@/lib/commander-legality";
+import {
+  gradeInputAfterChange,
+  gradeRaisingPromptLines,
+  gradeRiseReason,
+  GradeRaisingError,
+  keepIfHigherGrade,
+  loadCurrentGrade,
+} from "@/lib/grade-raising";
+import type { DeckGrade } from "@/lib/deck-grade";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardReplacementError extends Error {}
@@ -28,7 +37,8 @@ export interface ReplacementSuggestion {
  * (selected new cards, and the deck's non-commander cards), and a swap is
  * dropped if either side is unknown, or if the card to cut was already
  * claimed by an earlier swap or the new card was already matched. The
- * commander is never offered as a cut. The reason is trusted as-is.
+ * commander is never offered as a cut. A swap is kept only when the deck
+ * with that one exchange grades higher than it does now.
  */
 export async function suggestReplacements(
   deckId: string,
@@ -88,7 +98,18 @@ export async function suggestReplacements(
     newCards.push(card);
   }
 
-  const completion = await getLlmProvider().complete(buildPrompt(commanders, colorIdentity, newCards, cuttable));
+  let current: Awaited<ReturnType<typeof loadCurrentGrade>>;
+  try {
+    current = await loadCurrentGrade(deck);
+  } catch (error) {
+    if (error instanceof GradeRaisingError) {
+      throw new CardReplacementError(error.message);
+    }
+    throw error;
+  }
+  const completion = await getLlmProvider().complete(
+    buildPrompt(commanders, colorIdentity, newCards, cuttable, current.grade),
+  );
 
   const newByName = new Map(newCards.map((card) => [normalize(card.name), card]));
   const cuttableByName = new Map(cuttable.map((card) => [normalize(card.name), card]));
@@ -110,7 +131,16 @@ export async function suggestReplacements(
     swaps.push({ add, remove, reason });
   }
 
-  return swaps;
+  const raising = await keepIfHigherGrade(current.grade, swaps, (swap) =>
+    gradeInputAfterChange(current.input, current.grade, {
+      added: [{ name: swap.add.name }],
+      removed: [{ name: swap.remove.name }],
+    }),
+  );
+  return raising.map(({ item, nextScore }) => ({
+    ...item,
+    reason: gradeRiseReason(item.reason, current.grade.score, nextScore),
+  }));
 }
 
 function normalize(name: string): string {
@@ -138,6 +168,7 @@ function buildPrompt(
   colorIdentity: string[],
   newCards: Card[],
   deckCards: Card[],
+  grade: DeckGrade,
 ): string {
   const commanderNames = commanders.map((commander) => commander.name).join(" + ");
   const newList = newCards
@@ -150,6 +181,7 @@ function buildPrompt(
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
     "The player chose every new card below on purpose. For each one, pick the single weakest card currently in the deck that it should replace, and output exactly one line per new card - do not skip any.",
+    ...gradeRaisingPromptLines(grade),
     "Never pick the same card to cut twice. Only cut cards from the deck list.",
     "Respond with one swap per line in exactly this format and nothing else:",
     "New Card Name :: Deck Card To Cut :: One-sentence reason the swap improves the deck.",

@@ -10,6 +10,15 @@ import {
 import { selectWithinBudget } from "@/lib/budget-selection";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { refreshCardPrices } from "@/lib/card-prices";
+import {
+  gradeInputAfterChange,
+  gradeRaisingPromptLines,
+  gradeRiseReason,
+  GradeRaisingError,
+  keepIfHigherGrade,
+  loadCurrentGrade,
+} from "@/lib/grade-raising";
+import type { DeckGrade } from "@/lib/deck-grade";
 import type { Card } from "@/generated/prisma/client";
 
 export class CardSuggestionError extends Error {}
@@ -58,6 +67,9 @@ export interface SuggestCardsOptions {
  * dropped silently. The tag and reason accompanying an accepted name are
  * trusted as-is (unlike the card name, there's no ground truth to validate
  * free-text explanations against).
+ *
+ * Each accepted card is then graded as the only addition. It is kept only
+ * when that deck scores higher than the deck does now.
  */
 export async function suggestCards(
   deckId: string,
@@ -203,6 +215,7 @@ export async function suggestCards(
   const candidateCount =
     budgetUsd !== undefined ? Math.min(pool.length, requestCount * 2) : requestCount;
   const ownedIds = new Set(remainingPool.map((card) => card.id));
+  const current = await currentGrade(deck);
 
   const completion = await getLlmProvider().complete(
     buildPrompt(
@@ -210,6 +223,7 @@ export async function suggestCards(
       pool,
       allowUnowned,
       candidateCount,
+      current.grade,
       budgetUsd,
       ownedIds,
       deck.critique,
@@ -235,13 +249,14 @@ export async function suggestCards(
   }
 
   const ranked = await withFreshPrices(Array.from(matched.values()));
+  const graded = await gradeRaisingAdds(current, ranked);
   if (budgetUsd === undefined) {
-    return ranked;
+    return graded;
   }
 
   const chosenIds = new Set(
     selectWithinBudget(
-      ranked.map(({ card }) => ({
+      graded.map(({ card }) => ({
         id: card.id,
         costCents: ownedIds.has(card.id) ? 0 : Math.round((card.priceUsd ?? 0) * 100),
       })),
@@ -249,7 +264,7 @@ export async function suggestCards(
       requestCount,
     ),
   );
-  return ranked.filter(({ card }) => chosenIds.has(card.id));
+  return graded.filter(({ card }) => chosenIds.has(card.id));
 }
 
 /**
@@ -259,7 +274,7 @@ export async function suggestCards(
  * against the catalog, so hallucinated names, cards already in the deck, and
  * cards outside the commander's color identity are dropped. Results keep the
  * critique's order and are not budget-limited - the caller narrows them to a
- * budget.
+ * budget. A named card is kept only when adding it raises the deck's grade.
  */
 export async function suggestCardsFromCritique(deckId: string): Promise<SuggestedCard[]> {
   const deck = await prisma.deck.findUnique({
@@ -326,7 +341,37 @@ export async function suggestCardsFromCritique(deckId: string): Promise<Suggeste
     matched.set(card.id, { card, tag, reason });
   }
 
-  return withFreshPrices(Array.from(matched.values()));
+  const matchedCards = Array.from(matched.values());
+  if (matchedCards.length === 0) {
+    return [];
+  }
+
+  const current = await currentGrade(deck);
+  return gradeRaisingAdds(current, await withFreshPrices(matchedCards));
+}
+
+async function currentGrade(deck: Parameters<typeof loadCurrentGrade>[0]) {
+  try {
+    return await loadCurrentGrade(deck);
+  } catch (error) {
+    if (error instanceof GradeRaisingError) {
+      throw new CardSuggestionError(error.message);
+    }
+    throw error;
+  }
+}
+
+async function gradeRaisingAdds(
+  current: Awaited<ReturnType<typeof loadCurrentGrade>>,
+  suggestions: SuggestedCard[],
+): Promise<SuggestedCard[]> {
+  const raising = await keepIfHigherGrade(current.grade, suggestions, (suggestion) =>
+    gradeInputAfterChange(current.input, current.grade, { added: [{ name: suggestion.card.name }] }),
+  );
+  return raising.map(({ item, nextScore }) => ({
+    ...item,
+    reason: gradeRiseReason(item.reason, current.grade.score, nextScore),
+  }));
 }
 
 /**
@@ -405,6 +450,7 @@ function buildPrompt(
   pool: Card[],
   allowUnowned: boolean,
   requestCount: number,
+  grade: DeckGrade,
   budgetUsd?: number,
   ownedIds: Set<string> = new Set(),
   critique: string | null = null,
@@ -435,6 +481,7 @@ function buildPrompt(
     "",
     `Suggest exactly ${requestCount} card${requestCount === 1 ? "" : "s"} to add to this deck from ${poolDescription}.`,
     "Every suggestion must be within the commander's color identity.",
+    ...gradeRaisingPromptLines(grade),
     ...(allowUnowned
       ? ["Pick the strongest cards for this deck whether or not the player owns them; ownership is not a factor."]
       : []),

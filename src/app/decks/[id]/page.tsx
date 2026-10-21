@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Button, { LinkButton } from "@/components/button";
+import ExportMenu from "@/components/export-menu";
 import ManaCost from "@/components/mana-cost";
 import ColorIdentityPips from "@/components/color-identity";
 import CardStats from "@/components/card-stats";
@@ -119,6 +120,7 @@ export default function DeckPage() {
   const [isRefreshingPrices, setIsRefreshingPrices] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestedCards, setSuggestedCards] = useState<SuggestedCard[]>([]);
+  const [suggestionNote, setSuggestionNote] = useState<string | null>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [budgetInput, setBudgetInput] = useState("");
   // Every card the critique recommends, kept so a budget can narrow the
@@ -156,9 +158,11 @@ export default function DeckPage() {
     new Set(),
   );
   const [replacements, setReplacements] = useState<ReplacementSuggestion[]>([]);
+  const [replacementNote, setReplacementNote] = useState<string | null>(null);
   const [isFindingReplacements, setIsFindingReplacements] = useState(false);
   const [applyingSwapId, setApplyingSwapId] = useState<string | null>(null);
   const [cutSuggestions, setCutSuggestions] = useState<CutSuggestion[]>([]);
+  const [cutNote, setCutNote] = useState<string | null>(null);
   const [isFindingCuts, setIsFindingCuts] = useState(false);
 
   useEffect(() => {
@@ -517,6 +521,7 @@ export default function DeckPage() {
     budgetUsd?: number,
   ) {
     setError(null);
+    setSuggestionNote(null);
     setIsSuggesting(true);
 
     try {
@@ -540,6 +545,9 @@ export default function DeckPage() {
       const data = (await response.json()) as SuggestedCard[];
       setCritiqueSuggestions(null);
       setSuggestedCards(data);
+      setSuggestionNote(
+        data.length === 0 ? "No suggestion would raise this deck's grade." : null,
+      );
     } catch {
       setError("Something went wrong getting card suggestions for this deck.");
     } finally {
@@ -550,6 +558,7 @@ export default function DeckPage() {
   /** Fills the suggestions list with the cards the saved critique recommends adding. */
   async function handleSuggestFromCritique() {
     setError(null);
+    setSuggestionNote(null);
     setIsSuggesting(true);
 
     try {
@@ -573,6 +582,9 @@ export default function DeckPage() {
       const data = (await response.json()) as SuggestedCard[];
       setCritiqueSuggestions(data);
       setSuggestedCards(data);
+      setSuggestionNote(
+        data.length === 0 ? "No suggestion would raise this deck's grade." : null,
+      );
     } catch {
       setError("Something went wrong getting the critique's suggested cards.");
     } finally {
@@ -625,6 +637,7 @@ export default function DeckPage() {
 
   async function handleGetReplacements() {
     setError(null);
+    setReplacementNote(null);
     setIsFindingReplacements(true);
 
     try {
@@ -647,6 +660,7 @@ export default function DeckPage() {
 
       const data = (await response.json()) as ReplacementSuggestion[];
       setReplacements(data);
+      setReplacementNote(data.length === 0 ? "No swap would raise this deck's grade." : null);
     } catch {
       setError("Something went wrong getting replacement suggestions.");
     } finally {
@@ -656,6 +670,7 @@ export default function DeckPage() {
 
   async function handleGetCuts() {
     setError(null);
+    setCutNote(null);
     setIsFindingCuts(true);
 
     try {
@@ -671,7 +686,9 @@ export default function DeckPage() {
         return;
       }
 
-      setCutSuggestions((await response.json()) as CutSuggestion[]);
+      const data = (await response.json()) as CutSuggestion[];
+      setCutSuggestions(data);
+      setCutNote(data.length === 0 ? "No cut would raise this deck's grade." : null);
     } catch {
       setError("Something went wrong getting cut suggestions.");
     } finally {
@@ -1129,27 +1146,7 @@ export default function DeckPage() {
           </form>
         )}
         <div className="flex gap-2">
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export`}
-          >
-            Export CSV
-          </LinkButton>
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export?format=arena`}
-          >
-            Export Arena
-          </LinkButton>
-          <LinkButton
-            variant="secondary"
-            className="px-4 py-1 text-xs"
-            href={`/api/decks/${deckId}/export?format=mtgo`}
-          >
-            Export MTGO
-          </LinkButton>
+          <ExportMenu deckId={deckId} />
           <Button
             variant="secondary"
             className="px-4 py-1 text-xs text-danger"
@@ -1632,6 +1629,7 @@ export default function DeckPage() {
                   : "Best cards for budget"}
               </Button>
             </div>
+            {suggestionNote ? <p className="text-sm text-muted">{suggestionNote}</p> : null}
             {suggestedCards.length > 0 ? (
               <Button
                 variant="secondary"
@@ -1710,6 +1708,7 @@ export default function DeckPage() {
               <p className="text-sm text-muted">
                 This deck is {totalCardCount - 100} over 100 cards.
               </p>
+              {cutNote ? <p className="text-sm text-muted">{cutNote}</p> : null}
               {cutSuggestions.length > 0 ? (
                 <ul className="flex flex-col gap-2">
                   {cutSuggestions.map((cut) => (
@@ -1792,6 +1791,7 @@ export default function DeckPage() {
             ) : (
               <p className="text-sm text-muted">Loading your collection...</p>
             )}
+            {replacementNote ? <p className="text-sm text-muted">{replacementNote}</p> : null}
             {replacements.length > 0 ? (
               <ul className="flex flex-col gap-2 border-t border-border pt-3">
                 {replacements.map((swap) => (

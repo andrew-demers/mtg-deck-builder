@@ -2,6 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { isBasicLand, unionColorIdentity } from "@/lib/commander-legality";
 import { parseCardDecisions, settledEditLines } from "@/lib/deck-decisions";
+import {
+  gradeInputAfterChange,
+  gradeRaisingPromptLines,
+  gradeRiseReason,
+  GradeRaisingError,
+  keepIfHigherGrade,
+  loadCurrentGrade,
+} from "@/lib/grade-raising";
+import type { DeckGrade } from "@/lib/deck-grade";
 import type { Card } from "@/generated/prisma/client";
 
 export const COMMANDER_DECK_SIZE = 100;
@@ -19,10 +28,11 @@ export interface CutSuggestion {
  * the commander and basic lands are never offered, and as with
  * `suggestReplacements` the LLM's output is matched case-insensitively
  * against what was offered, so unknown or duplicate names are dropped (the
- * result can therefore be shorter than the number requested). Cards the
- * player just added are left out when other cards can cover the surplus, so
- * a card that was just put in is not immediately offered as a cut. A deck of
- * 100 cards or fewer is a `CardCutError`.
+ * result can therefore be shorter than the number requested). A cut is kept
+ * only when the deck without that card grades higher than it does now. Cards
+ * the player just added are left out when other cards can cover the surplus,
+ * so a card that was just put in is not immediately offered as a cut. A deck
+ * of 100 cards or fewer is a `CardCutError`.
  */
 export async function suggestCuts(deckId: string): Promise<CutSuggestion[]> {
   const deck = await prisma.deck.findUnique({
@@ -68,8 +78,25 @@ export async function suggestCuts(deckId: string): Promise<CutSuggestion[]> {
   const canSpareAdds = unprotected.length >= excess;
   const cuttable = canSpareAdds ? unprotected : allCuttable;
 
+  let current: Awaited<ReturnType<typeof loadCurrentGrade>>;
+  try {
+    current = await loadCurrentGrade(deck);
+  } catch (error) {
+    if (error instanceof GradeRaisingError) {
+      throw new CardCutError(error.message);
+    }
+    throw error;
+  }
   const completion = await getLlmProvider().complete(
-    buildPrompt(commanders, colorIdentity, cuttable, excess, canSpareAdds ? decisions : null, canSpareAdds ? [] : decisions.adds.map((card) => card.name)),
+    buildPrompt(
+      commanders,
+      colorIdentity,
+      cuttable,
+      excess,
+      current.grade,
+      canSpareAdds ? decisions : null,
+      canSpareAdds ? [] : decisions.adds.map((card) => card.name),
+    ),
   );
 
   const cuttableByName = new Map(cuttable.map((card) => [normalize(card.name), card]));
@@ -91,7 +118,13 @@ export async function suggestCuts(deckId: string): Promise<CutSuggestion[]> {
     }
   }
 
-  return cuts;
+  const raising = await keepIfHigherGrade(current.grade, cuts, (cut) =>
+    gradeInputAfterChange(current.input, current.grade, { removed: [{ name: cut.card.name }] }),
+  );
+  return raising.map(({ item, nextScore }) => ({
+    ...item,
+    reason: gradeRiseReason(item.reason, current.grade.score, nextScore),
+  }));
 }
 
 function normalize(name: string): string {
@@ -115,6 +148,7 @@ function buildPrompt(
   colorIdentity: string[],
   deckCards: Card[],
   count: number,
+  grade: DeckGrade,
   decisions: ReturnType<typeof parseCardDecisions> | null = null,
   addedNamesToCutLast: string[] = [],
 ): string {
@@ -128,6 +162,7 @@ function buildPrompt(
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
     `Pick exactly ${count} card${count === 1 ? "" : "s"} to cut: the weakest or least synergistic with the commander and the rest of the deck. Keep the mana base and core strategy functional.`,
+    ...gradeRaisingPromptLines(grade),
     "Only cut cards from the deck list, and never pick the same card twice.",
     ...(decisions ? settledEditLines(decisions) : []),
     ...(addedNamesToCutLast.length > 0

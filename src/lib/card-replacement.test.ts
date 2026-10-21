@@ -11,13 +11,29 @@ vi.mock("@/lib/llm", () => ({
   getLlmProvider: vi.fn(),
 }));
 
+vi.mock("@/lib/deck-grade", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/deck-grade")>("@/lib/deck-grade");
+  return { ...actual, gradeDeck: vi.fn() };
+});
+
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
+import { GRADE_CATEGORIES, gradeDeck, type GradeInput } from "@/lib/deck-grade";
 import { suggestReplacements, CardReplacementError } from "@/lib/card-replacement";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
 const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
+const gradeDeckMock = gradeDeck as unknown as ReturnType<typeof vi.fn>;
+
+function raisingGrade(input: GradeInput) {
+  const score = input.previous ? input.previous.score + 4 : 60;
+  return {
+    score,
+    breakdown: GRADE_CATEGORIES.map((category) => ({ category, score, note: "Note." })),
+    summary: "Summary.",
+  };
+}
 
 function card(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -70,6 +86,8 @@ describe("suggestReplacements", () => {
     deckFindUniqueMock.mockReset();
     collectionFindManyMock.mockReset();
     getLlmProviderMock.mockReset();
+    gradeDeckMock.mockReset();
+    gradeDeckMock.mockImplementation(raisingGrade);
   });
 
   it("rejects an empty selection", async () => {
@@ -104,7 +122,9 @@ describe("suggestReplacements", () => {
 
     const swaps = await suggestReplacements("deck_1", ["new_a"]);
 
-    expect(swaps).toEqual([{ add: newA, remove: oldB, reason: "Strictly better." }]);
+    expect(swaps).toEqual([
+      { add: newA, remove: oldB, reason: "Strictly better. Raises the grade from 60 to 64." },
+    ]);
   });
 
   it("never offers or accepts the commander as a cut", async () => {

@@ -29,10 +29,16 @@ vi.mock("@/lib/llm", () => ({
   getLlmProvider: vi.fn(),
 }));
 
+vi.mock("@/lib/deck-grade", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/deck-grade")>("@/lib/deck-grade");
+  return { ...actual, gradeDeck: vi.fn() };
+});
+
 import { prisma } from "@/lib/prisma";
 import { getLlmProvider } from "@/lib/llm";
 import { findBudgetCandidates } from "@/lib/budget-candidates";
 import { refreshCardPrices } from "@/lib/card-prices";
+import { GRADE_CATEGORIES, gradeDeck, type GradeInput } from "@/lib/deck-grade";
 import { suggestCards, suggestCardsFromCritique, CardSuggestionError } from "@/lib/card-suggestion";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
@@ -42,6 +48,25 @@ const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as Ret
 const cardFindManyMock = prisma.card.findMany as unknown as ReturnType<typeof vi.fn>;
 const refreshPricesMock = refreshCardPrices as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
+const gradeDeckMock = gradeDeck as unknown as ReturnType<typeof vi.fn>;
+
+function raisingGrade(input: GradeInput) {
+  const score = input.previous ? input.previous.score + 4 : 60;
+  return {
+    score,
+    breakdown: GRADE_CATEGORIES.map((category) => ({ category, score, note: "Note." })),
+    summary: "Summary.",
+  };
+}
+
+function raised(reason: string) {
+  return `${reason} Raises the grade from 60 to 64.`;
+}
+
+beforeEach(() => {
+  gradeDeckMock.mockReset();
+  gradeDeckMock.mockImplementation(raisingGrade);
+});
 
 function card(overrides: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
   return {
@@ -193,7 +218,7 @@ describe("suggestCards", () => {
     const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
-      { card: validCard, tag: "Ramp", reason: "Helps ramp into the commander's high cost." },
+      { card: validCard, tag: "Ramp", reason: raised("Helps ramp into the commander's high cost.") },
     ]);
   });
 
@@ -212,7 +237,7 @@ describe("suggestCards", () => {
 
     const result = await suggestCards("deck_1", { allowUnowned: false });
 
-    expect(result).toEqual([{ card: owned, tag: "Synergy", reason: "Fits the deck's plan." }]);
+    expect(result).toEqual([{ card: owned, tag: "Synergy", reason: raised("Fits the deck's plan.") }]);
   });
 
   it("does not re-suggest a nonbasic card already in the deck even when further copies are owned (singleton rule)", async () => {
@@ -240,7 +265,7 @@ describe("suggestCards", () => {
       colorIdentity: ["G"],
       type: "Basic Land — Forest",
     });
-    mockDeck([{ cardId: basicLand.id, quantity: 1, isCommander: false }]);
+    mockDeck([{ cardId: basicLand.id, quantity: 1, isCommander: false, card: basicLand }]);
     collectionFindManyMock.mockResolvedValue([
       { cardId: basicLand.id, card: basicLand, quantity: 3 },
     ]);
@@ -249,7 +274,7 @@ describe("suggestCards", () => {
     const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
-      { card: basicLand, tag: "Land", reason: "Keeps land drops consistent." },
+      { card: basicLand, tag: "Land", reason: raised("Keeps land drops consistent.") },
     ]);
   });
 
@@ -287,7 +312,7 @@ describe("suggestCards", () => {
     const result = await suggestCards("deck_1", { allowUnowned: false });
 
     expect(result).toEqual([
-      { card: blueCard, tag: "Synergy", reason: "Fits the deck's plan." },
+      { card: blueCard, tag: "Synergy", reason: raised("Fits the deck's plan.") },
     ]);
   });
 
@@ -366,7 +391,7 @@ describe("suggestCards", () => {
 
     expect(cardFindManyMock).toHaveBeenCalled();
     expect(result).toEqual([
-      { card: unowned, tag: "Synergy", reason: "Great with the commander's plan." },
+      { card: unowned, tag: "Synergy", reason: raised("Great with the commander's plan.") },
     ]);
   });
 
@@ -405,6 +430,19 @@ describe("suggestCards", () => {
 
     const prompt = completeMock.mock.calls[0][0] as string;
     expect(prompt).toContain("Suggest exactly 1 card ");
+    expect(prompt).toContain("current overall grade is 60 out of 100");
+  });
+
+  it("drops a suggestion that does not raise the deck's grade", async () => {
+    const validCard = card({ id: "flat", name: "Flat Card", colorIdentity: ["W"] });
+    mockDeck([]);
+    collectionFindManyMock.mockResolvedValue([{ cardId: validCard.id, card: validCard, quantity: 1 }]);
+    mockSuggestion(validCard.name as string);
+    gradeDeckMock.mockImplementation(async () => raisingGrade({ goal: null, commanderName: "c", cards: [] }));
+
+    const result = await suggestCards("deck_1", { allowUnowned: false });
+
+    expect(result).toEqual([]);
   });
 
   it("caps the requested suggestion count at the available pool size", async () => {
@@ -544,7 +582,7 @@ describe("suggestCardsFromCritique", () => {
     const result = await suggestCardsFromCritique("deck_1");
 
     expect(result.map((r) => r.card.id)).toEqual(["tutor", "hi"]);
-    expect(result[0]).toMatchObject({ tag: "Tutor", reason: "Finds the engine." });
+    expect(result[0]).toMatchObject({ tag: "Tutor", reason: raised("Finds the engine.") });
   });
 
   it("drops a card the player already cut even when the critique names it", async () => {
