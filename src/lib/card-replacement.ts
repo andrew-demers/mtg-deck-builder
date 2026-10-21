@@ -25,12 +25,13 @@ export interface ReplacementSuggestion {
 }
 
 /**
- * Given cards the player just acquired (`newCardIds`), asks the LLM which
- * existing deck card each one should replace. Every new card must be owned by
- * the deck's user, within the commander's color identity, and not already in
- * the deck (basic lands excepted); anything else is a `CardReplacementError`
- * so the caller learns their selection was invalid instead of silently
- * getting fewer results.
+ * Given cards the player wants to add (`newCardIds`), asks the LLM which
+ * existing deck card each one should replace. Every new card must exist in
+ * the catalog, be within the commander's color identity, and not already in
+ * the deck (basic lands excepted). Ownership is not required — a card found
+ * on Scryfall can be swapped in the same way as one from the collection.
+ * Anything else is a `CardReplacementError` so the caller learns their
+ * selection was invalid instead of silently getting fewer results.
  *
  * As with `suggestCards`, the LLM's output is never trusted directly: both
  * names are matched case-insensitively against what was actually offered
@@ -76,18 +77,17 @@ export async function suggestReplacements(
     throw new CardReplacementError("Deck has no cards to replace");
   }
 
-  const entries = await prisma.collectionEntry.findMany({
-    where: { userId: deck.userId, cardId: { in: uniqueIds } },
-    include: { card: true },
+  const catalogCards = await prisma.card.findMany({
+    where: { id: { in: uniqueIds } },
   });
-  const ownedById = new Map(entries.map((entry) => [entry.cardId, entry.card]));
+  const catalogById = new Map(catalogCards.map((card) => [card.id, card]));
   const deckCardIds = new Set(deck.cards.map((deckCard) => deckCard.cardId));
 
   const newCards: Card[] = [];
   for (const id of uniqueIds) {
-    const card = ownedById.get(id);
+    const card = catalogById.get(id);
     if (!card) {
-      throw new CardReplacementError("You do not own one of the selected cards");
+      throw new CardReplacementError("One of the selected cards was not found");
     }
     if (!validateColorIdentity(colorIdentity, [card])) {
       throw new CardReplacementError(`${card.name} is outside the commander's color identity`);
@@ -177,7 +177,7 @@ function buildPrompt(
   const deckList = deckCards.map((card) => `- ${card.name} (${card.type})`).join("\n");
 
   return [
-    "You are improving an existing Magic: The Gathering Commander/EDH deck with cards the player just acquired.",
+    "You are improving an existing Magic: The Gathering Commander/EDH deck with cards the player wants to add.",
     `Commander: ${commanderNames} (color identity: ${colorIdentity.join("") || "colorless"})`,
     "",
     "The player chose every new card below on purpose. For each one, pick the single weakest card currently in the deck that it should replace, and output exactly one line per new card - do not skip any.",

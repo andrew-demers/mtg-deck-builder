@@ -10,13 +10,13 @@ interface ReplaceSuggestionsBody {
 
 /**
  * POST /api/decks/[id]/replace-suggestions - session-scoped. Takes a JSON
- * body `{ cardIds: string[] }` of newly acquired cards the caller owns and
- * asks the LLM which existing card in the deck each should replace. Returns
- * `{ add, remove, reason }` swaps; nothing is changed in the deck (the client
- * applies a swap via the existing add/remove card endpoints). 404 if the deck
- * doesn't exist, 403 if it belongs to a different user, 400 for a missing or
- * invalid selection (not owned, off-color, already in the deck) or a deck
- * with no commander.
+ * body `{ cardIds: string[] }` of cards the caller wants to add (from their
+ * collection or from a Scryfall search) and asks the LLM which existing card
+ * in the deck each should replace. Returns `{ add, remove, reason }` swaps;
+ * nothing is changed in the deck (the client applies a swap via the existing
+ * add/remove card endpoints). 404 if the deck doesn't exist, 403 if it
+ * belongs to a different user, 400 for a missing or invalid selection
+ * (unknown card, off-color, already in the deck) or a deck with no commander.
  */
 export async function POST(
   request: Request,

@@ -154,9 +154,13 @@ export default function DeckPage() {
     new Set(),
   );
   const [swapQuery, setSwapQuery] = useState("");
-  const [selectedNewCardIds, setSelectedNewCardIds] = useState<Set<string>>(
-    new Set(),
+  const [searchAllCards, setSearchAllCards] = useState(false);
+  const [scryfallResults, setScryfallResults] = useState<CardData[]>([]);
+  const [isSearchingScryfall, setIsSearchingScryfall] = useState(false);
+  const [scryfallSearchError, setScryfallSearchError] = useState<string | null>(
+    null,
   );
+  const [selectedNewCards, setSelectedNewCards] = useState<CardData[]>([]);
   const [replacements, setReplacements] = useState<ReplacementSuggestion[]>([]);
   const [replacementNote, setReplacementNote] = useState<string | null>(null);
   const [isFindingReplacements, setIsFindingReplacements] = useState(false);
@@ -281,6 +285,61 @@ export default function DeckPage() {
 
     return () => controller.abort();
   }, [deckId]);
+
+  useEffect(() => {
+    if (!searchAllCards || !deckId) {
+      return;
+    }
+
+    const query = swapQuery.trim();
+    if (query.length < 2) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setIsSearchingScryfall(true);
+      setScryfallSearchError(null);
+
+      try {
+        const response = await fetch(
+          `/api/decks/${deckId}/scryfall-search?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal },
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok) {
+          setScryfallResults([]);
+          setScryfallSearchError("Couldn't search Scryfall.");
+          return;
+        }
+
+        setScryfallResults((await response.json()) as CardData[]);
+      } catch (fetchError) {
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          return;
+        }
+        if (!cancelled) {
+          setScryfallResults([]);
+          setScryfallSearchError("Couldn't search Scryfall.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSearchingScryfall(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [deckId, searchAllCards, swapQuery, deck?.commanderCardId]);
 
   async function handleBuildDeck() {
     setError(null);
@@ -623,16 +682,12 @@ export default function DeckPage() {
     setSuggestedCards(remaining.filter(({ card }) => chosen.has(card.id)));
   }
 
-  function toggleNewCard(cardId: string) {
-    setSelectedNewCardIds((current) => {
-      const next = new Set(current);
-      if (next.has(cardId)) {
-        next.delete(cardId);
-      } else {
-        next.add(cardId);
-      }
-      return next;
-    });
+  function toggleNewCard(card: CardData) {
+    setSelectedNewCards((current) =>
+      current.some((item) => item.id === card.id)
+        ? current.filter((item) => item.id !== card.id)
+        : [...current, card],
+    );
   }
 
   async function handleGetReplacements() {
@@ -644,7 +699,9 @@ export default function DeckPage() {
       const response = await fetch(`/api/decks/${deckId}/replace-suggestions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cardIds: Array.from(selectedNewCardIds) }),
+        body: JSON.stringify({
+          cardIds: selectedNewCards.map((card) => card.id),
+        }),
       });
 
       if (!response.ok) {
@@ -748,11 +805,9 @@ export default function DeckPage() {
       setReplacements((current) =>
         current.filter((swap) => swap.add.id !== add.id),
       );
-      setSelectedNewCardIds((current) => {
-        const next = new Set(current);
-        next.delete(add.id);
-        return next;
-      });
+      setSelectedNewCards((current) =>
+        current.filter((card) => card.id !== add.id),
+      );
     } catch {
       setError("Something went wrong applying this swap.");
     } finally {
@@ -785,6 +840,9 @@ export default function DeckPage() {
       setDeck(data);
       setSuggestedCards((current) =>
         current.filter((suggestion) => suggestion.card.id !== cardId),
+      );
+      setSelectedNewCards((current) =>
+        current.filter((card) => card.id !== cardId || isBasicLand(card)),
       );
     } catch {
       setError("Something went wrong adding this card to the deck.");
@@ -1083,6 +1141,12 @@ export default function DeckPage() {
   const buyList = collectionCards ? buildBuyList(deck.cards, ownedCardIds) : [];
   const massEntryUrl = buildMassEntryUrl(buyList);
 
+  const selectedNewCardIds = new Set(selectedNewCards.map((card) => card.id));
+  const stillAddable = (card: CardData) =>
+    (!deckCardIds.has(card.id) || isBasicLand(card)) &&
+    validateColorIdentity(commanderColorIdentity, [card]);
+  const pinnedNewCards = selectedNewCards.filter(stillAddable);
+
   const normalizedSwapQuery = swapQuery.trim().toLowerCase();
   const swapCandidates = (collectionCards ?? []).filter(
     (card) =>
@@ -1097,6 +1161,28 @@ export default function DeckPage() {
     ...swapCandidates.filter((card) => selectedNewCardIds.has(card.id)),
     ...swapCandidates.filter((card) => !selectedNewCardIds.has(card.id)),
   ];
+  const collectionSwapIds = new Set(sortedSwapCandidates.map((card) => card.id));
+  const collectionSwapList = [
+    ...pinnedNewCards.filter((card) => !collectionSwapIds.has(card.id)),
+    ...sortedSwapCandidates,
+  ];
+  const scryfallQuery = swapQuery.trim();
+  const scryfallSwapList = [
+    ...pinnedNewCards,
+    ...(scryfallQuery.length < 2
+      ? []
+      : scryfallResults.filter(
+          (card) => stillAddable(card) && !selectedNewCardIds.has(card.id),
+        )),
+  ];
+  const scryfallEmptyMessage =
+    scryfallSwapList.length > 0 || (scryfallQuery.length >= 2 && scryfallSearchError)
+      ? null
+      : scryfallQuery.length < 2
+        ? "Type at least two characters to search Scryfall."
+        : isSearchingScryfall
+          ? "Searching Scryfall..."
+          : "No cards match.";
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-8">
@@ -1756,38 +1842,120 @@ export default function DeckPage() {
               </Button>
             }
           >
-            {collectionCards ? (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={searchAllCards}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setSearchAllCards(checked);
+                  if (checked && swapQuery.trim().length >= 2) {
+                    setIsSearchingScryfall(true);
+                    setScryfallSearchError(null);
+                  }
+                }}
+              />
+              Search all cards
+            </label>
+            <input
+              type="text"
+              value={swapQuery}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSwapQuery(value);
+                if (searchAllCards && value.trim().length >= 2) {
+                  setIsSearchingScryfall(true);
+                  setScryfallSearchError(null);
+                } else if (value.trim().length < 2) {
+                  setIsSearchingScryfall(false);
+                }
+              }}
+              placeholder={
+                searchAllCards
+                  ? "Search Scryfall"
+                  : "Search your collection for the cards you just got"
+              }
+              className="input text-sm"
+            />
+            {searchAllCards ? (
               <>
-                <input
-                  type="text"
-                  value={swapQuery}
-                  onChange={(event) => setSwapQuery(event.target.value)}
-                  placeholder="Search your collection for the cards you just got"
-                  className="input text-sm"
-                />
-                {sortedSwapCandidates.length === 0 ? (
-                  <p className="text-sm text-muted">No owned cards match.</p>
-                ) : (
+                {scryfallQuery.length >= 2 && scryfallSearchError ? (
+                  <p className="text-sm text-danger">{scryfallSearchError}</p>
+                ) : null}
+                {scryfallSwapList.length > 0 ? (
                   <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-                    {sortedSwapCandidates.map((card) => (
-                      <li key={card.id} className="text-sm">
-                        <label className="flex cursor-pointer items-center gap-2">
+                    {scryfallSwapList.map((card) => (
+                      <li
+                        key={card.id}
+                        className="flex items-center justify-between gap-4 text-sm"
+                      >
+                        <label className="flex min-w-0 cursor-pointer items-center gap-2">
                           <input
                             type="checkbox"
                             checked={selectedNewCardIds.has(card.id)}
-                            onChange={() => toggleNewCard(card.id)}
+                            onChange={() => toggleNewCard(card)}
                           />
-                          <CardName
-                            name={card.name}
-                            oracleText={card.oracleText}
-                          />
-                          <span className="text-muted">- {card.type}</span>
+                          <span>
+                            <CardName
+                              name={card.name}
+                              oracleText={card.oracleText}
+                            />
+                            {collectionCards && !ownedCardIds.has(card.id) ? (
+                              <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
+                                Not owned
+                              </span>
+                            ) : null}
+                            {otherDeckCardIds.has(card.id) ? (
+                              <span className="tag-badge ml-2">
+                                In another deck
+                              </span>
+                            ) : null}
+                            <span className="text-muted"> - {card.type}</span>
+                          </span>
                         </label>
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleAddCard(card.id)}
+                          disabled={addingCardId === card.id}
+                          className="px-4 py-1 text-xs"
+                        >
+                          {addingCardId === card.id ? "Adding..." : "Add"}
+                        </Button>
                       </li>
                     ))}
                   </ul>
-                )}
+                ) : scryfallEmptyMessage ? (
+                  <p className="text-sm text-muted">{scryfallEmptyMessage}</p>
+                ) : null}
               </>
+            ) : collectionCards ? (
+              collectionSwapList.length === 0 ? (
+                <p className="text-sm text-muted">No owned cards match.</p>
+              ) : (
+                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+                  {collectionSwapList.map((card) => (
+                    <li key={card.id} className="text-sm">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedNewCardIds.has(card.id)}
+                          onChange={() => toggleNewCard(card)}
+                        />
+                        <CardName
+                          name={card.name}
+                          oracleText={card.oracleText}
+                        />
+                        {collectionCards && !ownedCardIds.has(card.id) ? (
+                          <span className="ml-2 rounded-full bg-danger/10 px-2 py-0.5 text-xs font-semibold text-danger">
+                            Not owned
+                          </span>
+                        ) : null}
+                        <span className="text-muted">- {card.type}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )
             ) : (
               <p className="text-sm text-muted">Loading your collection...</p>
             )}
