@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     deck: { findUnique: vi.fn() },
-    collectionEntry: { findMany: vi.fn() },
+    card: { findMany: vi.fn() },
   },
 }));
 
@@ -22,7 +22,7 @@ import { GRADE_CATEGORIES, gradeDeck, type GradeInput } from "@/lib/deck-grade";
 import { suggestReplacements, CardReplacementError } from "@/lib/card-replacement";
 
 const deckFindUniqueMock = prisma.deck.findUnique as unknown as ReturnType<typeof vi.fn>;
-const collectionFindManyMock = prisma.collectionEntry.findMany as unknown as ReturnType<typeof vi.fn>;
+const cardFindManyMock = prisma.card.findMany as unknown as ReturnType<typeof vi.fn>;
 const getLlmProviderMock = getLlmProvider as unknown as ReturnType<typeof vi.fn>;
 const gradeDeckMock = gradeDeck as unknown as ReturnType<typeof vi.fn>;
 
@@ -71,10 +71,8 @@ function mockDeck() {
   });
 }
 
-function mockOwned(...cards: Record<string, unknown>[]) {
-  collectionFindManyMock.mockResolvedValue(
-    cards.map((owned) => ({ cardId: owned.id, card: owned })),
-  );
+function mockCatalog(...cards: Record<string, unknown>[]) {
+  cardFindManyMock.mockResolvedValue(cards);
 }
 
 function mockCompletion(text: string) {
@@ -84,7 +82,7 @@ function mockCompletion(text: string) {
 describe("suggestReplacements", () => {
   beforeEach(() => {
     deckFindUniqueMock.mockReset();
-    collectionFindManyMock.mockReset();
+    cardFindManyMock.mockReset();
     getLlmProviderMock.mockReset();
     gradeDeckMock.mockReset();
     gradeDeckMock.mockImplementation(raisingGrade);
@@ -94,30 +92,30 @@ describe("suggestReplacements", () => {
     await expect(suggestReplacements("deck_1", [])).rejects.toThrow(CardReplacementError);
   });
 
-  it("rejects a card the user does not own", async () => {
+  it("rejects a card that is not in the catalog", async () => {
     mockDeck();
-    mockOwned();
+    mockCatalog();
 
-    await expect(suggestReplacements("deck_1", ["new_a"])).rejects.toThrow(/do not own/);
+    await expect(suggestReplacements("deck_1", ["new_a"])).rejects.toThrow(/not found/);
   });
 
   it("rejects a card outside the commander's color identity", async () => {
     mockDeck();
-    mockOwned(offColor);
+    mockCatalog(offColor);
 
     await expect(suggestReplacements("deck_1", ["off"])).rejects.toThrow(/color identity/);
   });
 
   it("rejects a nonbasic card already in the deck", async () => {
     mockDeck();
-    mockOwned(oldA);
+    mockCatalog(oldA);
 
     await expect(suggestReplacements("deck_1", ["old_a"])).rejects.toThrow(/already in the deck/);
   });
 
   it("returns matched swaps with full card records", async () => {
     mockDeck();
-    mockOwned(newA);
+    mockCatalog(newA);
     mockCompletion("New A :: Old B :: Strictly better.");
 
     const swaps = await suggestReplacements("deck_1", ["new_a"]);
@@ -129,7 +127,7 @@ describe("suggestReplacements", () => {
 
   it("never offers or accepts the commander as a cut", async () => {
     mockDeck();
-    mockOwned(newA);
+    mockCatalog(newA);
     const complete = vi.fn().mockResolvedValue("New A :: Commander :: Cut it.");
     getLlmProviderMock.mockReturnValue({ complete });
 
@@ -141,7 +139,7 @@ describe("suggestReplacements", () => {
 
   it("drops hallucinated names and reused cuts", async () => {
     mockDeck();
-    mockOwned(newA, newB);
+    mockCatalog(newA, newB);
     mockCompletion(
       [
         "New A :: Old A :: First.",
